@@ -1,0 +1,91 @@
+\documentclass[a4paper, 12pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[scale=1,angle=0,opacity=1,color=black!60]{background}
+\usepackage{tikzpagenodes}
+\usepackage{lastpage}
+\usepackage{lmodern}
+\usepackage{float}
+\usepackage{adjustbox}
+\usepackage{amsmath}
+\usepackage{nccmath}
+\usepackage{url}
+\usepackage{listings}
+\usepackage{alltt}
+\usepackage[section]{placeins}
+\usepackage{tocloft}
+\renewcommand{\cftsecleader}{\cftdotfill{\cftdotsep}}  % lineas punteadas en la tabla de contenidos
+%\newcommand\mydotfill{\cftdotfill{\cftdotsep}}
+
+\usepackage[textwidth=420pt,textheight=630pt]{geometry}
+\setlength{\oddsidemargin}{15.5pt}
+%\usepackage[none]{hyphenat} %no cortar palabras
+
+\usepackage[spanish, activeacute]{babel} %Definir idioma español
+\usepackage[utf8]{inputenc} %Codificacion utf-8
+\backgroundsetup{contents={}} %Saca el 'draft'
+\definecolor{mygray}{rgb}{0.95,0.95,0.95}
+
+\usepackage{listings}
+\lstset{
+    basicstyle=\footnotesize,
+    backgroundcolor=\color{mygray},         
+    breaklines=true,
+    breakatwhitespace=true,   
+    postbreak=\mbox{\textcolor{red}{$\hookrightarrow$}\space},              
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=4,
+    language=C,
+    frame=none,
+	title=\lstname,
+}
+
+\def\labelitemi{$\bullet$}
+
+\begin{document}		
+	% TÍTULO, AUTORES Y FECHA
+	\begin{titlepage}
+		\vspace*{\fill}
+		\begin{center}
+			\Large 75.43 Introducción a los sistemas distribuidos \\
+			\Huge Entrega Trabajo Práctico 3: Enlace \\
+			\bigskip\bigskip\bigskip
+			\large\textbf{Integrantes:} \\
+			\begin{center}
+				\begin{tabular}{||c | c||} 
+					\hline
+					Alumno & padron \\ [0.5ex] 
+					\hline\hline
+					Azcona, Gabriela Mariel & 98363 \\
+					\hline
+					Avigliano, Patricio Andres & 98861 \\
+					\hline
+					Blanco, Sebastian Ezequiel & 98539 \\
+					\hline
+				\end{tabular}
+			\end{center}
+			\textbf{Fecha de Entrega:} 23/10/2018\\
+			\textbf{GitHub:} https://github.com/BlancoSebastianEzequiel/Datacenter\\
+
+		\end{center}
+		\vspace*{\fill}
+	\end{titlepage}
+	\pagenumbering{arabic}
+	\newpage
+			
+	% ÍNDICE
+	\tableofcontents
+	\newpage
+	\pagenumbering{arabic}
+	\section{Introducción teórica}
+	\section{Objetivo}
+	\section{Desarrollo}
+	\section{Pruebas realizadas}
+	\section{Conclusiones}
+	\section{Anexos (Código)}
+\end{document}
