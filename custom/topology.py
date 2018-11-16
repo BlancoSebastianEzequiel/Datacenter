@@ -1,44 +1,43 @@
 from mininet.topo import Topo
+from math import log
 
 
 class Topology(Topo):
-    def __init__(self):
-        # "create custom topo."
-        # Initialize topology
+    def __init__(self, number_of_levels):
+        """
+        :type number_of_levels: int
+        """
         Topo.__init__(self)
-        # Add host and swithes
-        h1 = self.addHost("h1")
-        h2 = self.addHost("h2")
-        h3 = self.addHost("h4")
-        h4 = self.addHost("h5")
-        h5 = self.addHost("h6")
-        h6 = self.addHost("h7")
-        h7 = self.addHost("h8")
-        s1 = self.addSwitch("s1")
-        s2 = self.addSwitch("s2")
-        s3 = self.addSwitch("s3")
-        s4 = self.addSwitch("s4")
-        s5 = self.addSwitch("s5")
-        s6 = self.addSwitch("s6")
-        s7 = self.addSwitch("s7")
-        # Add links
-        self.addLink(h1, s1)
-        self.addLink(h2, s1)
-        self.addLink(h3, s1)
+        number_of_clients = 3
+        devices = {}
+        for i in range(0, number_of_levels-1):
+            number_of_switches = 2 ** i
+            self.add_links_between_switches(number_of_switches, devices)
+            if i == 0:
+                self.add_hosts(self, number_of_clients, devices, True)
+            if i == number_of_levels-1:
+                self.add_hosts(number_of_switches, devices, False)
+            self.add_links_between_switches(number_of_switches, devices)
 
-        self.addLink(s1, s2)
-        self.addLink(s1, s3)
+    def add_hosts(self, number_of_host, devices, is_root):
+        for i in range(0, number_of_host-1):
+            host_name = 'h%s' % (i + 1)
+            devices[host_name] = self.addHost(host_name)
+            self.add_host_links(i + 1, devices, is_root)
 
-        self.addLink(h4, s4)
-        self.addLink(h5, s5)
-        self.addLink(h6, s6)
+    def add_links_between_switches(self, number_of_switches, devices):
+        for i in range(0, number_of_switches - 1):
+            switch_name = 's%s' % (i + 1)
+            devices[switch_name] = self.addSwitch(switch_name)
+            some_device = devices[switch_name]
+            for j in range(1, number_of_switches - 1):
+                another_device = devices['s%s' % (j + 1)]
+                self.addLink(some_device, another_device)
 
-        self.addLink(s2, s4)
-        self.addLink(s2, s5)
-        self.addLink(s2, s6)
-        self.addLink(s2, s7)
-
-        self.addLink(s3, s4)
-        self.addLink(s4, s5)
-        self.addLink(s5, s6)
-        self.addLink(s6, s7)
+    def add_host_links(self, host_number, devices, is_root):
+        host_name = 'h%s' % host_number
+        if is_root:
+            self.addLink(devices[host_name], devices["s1"])
+            return
+        switch_name = 's%s' % host_number
+        self.addLink(devices[host_name], devices[switch_name])
