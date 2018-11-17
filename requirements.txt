@@ -1,1 +1,2 @@
 git+https://github.com/mininet/mininet.git
+git+https://github.com/noxrepo/pox.git
