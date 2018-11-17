@@ -4,27 +4,29 @@ import pox.openflow.libopenflow_01 as open_flow
 import pox.lib.packet as pkt
 from pox.lib.addresses import EthAddr, IPAddr
 from pox.lib.util import dpid_to_str
-import random
+import time
 
 log = core.getLogger()
 used_ports = {}
-last_used_port = {}
+_flood_delay = 0
 
 class Controller(EventMixin):
 
-    def __init__(self):
+    def __init__(self, connection):
         self.mac_to_port = {}
-        self.msg = open_flow.ofp_packet_out()
         core.openflow.addListeners(self)
+        self.connection = connection
+        self.connection.addListeners(self)
+        self.hold_down_expired = _flood_delay == 0
 
     def _handle_Connection_up(self, event):
-        switch = dpidToStr(event.connection.dpid)
+        switch = dpid_to_str(self.connection.dpid)
         log.info("Flooding multicast packets in switch: " + switch)
         msg = open_flow.ofp_flow_mod()
         msg.match.dl_dst = EthAddr("ff:ff:ff:ff:ff:ff")
         port = open_flow.OFPP_FLOOD
         msg.actions.append(open_flow.ofp_action_output(port=port))
-        event.connection.send(msg)
+        self.connection.send(msg)
         used_ports[event.dpid] = set()
 
     def _handle_Packet_in(self, event):
@@ -65,12 +67,12 @@ class Controller(EventMixin):
             msg.idle_timeout = duration[0]
             msg.hard_timeout = duration[1]
             msg.buffer_id = event.ofp.buffer_id
-            event.connection.send(msg)
+            self.connection.send(msg)
         elif event.ofp.buffer_id is not None:
             msg = open_flow.ofp_packet_out()
             msg.buffer_id = event.ofp.buffer_id
             msg.in_port = event.port
-            event.connection.send(msg)
+            self.connection.send(msg)
 
         # Update address/port table
         self.macToPort[packet.src] = event.port
@@ -88,20 +90,27 @@ class Controller(EventMixin):
             return
 
         paths = self.get_minimum_paths(dst_pid)
-        dst_port = self.find_dst_port(paths, dst_pid)
+        dst_port = self.find_dst_port(paths, dst_pid, dst_port)
         self._update_flow_table(event, dst_port, dst_pid)
         self._send_packet(event, dst_port)
 
-
     def flood(self, message=None, event=None):
-        if message is not None:
-            log.debug(message)
         msg = open_flow.ofp_packet_out()
-        port = open_flow.OFPP_FLOOD
-        msg.actions.append(open_flow.ofp_action_output(port=port))
+        if time.time() - self.connection.connect_time >= _flood_delay:
+            if self.hold_down_expired is False:
+                self.hold_down_expired = True
+                log.info("%s: Flood hold-down expired -- flooding",
+                         dpid_to_str(event.dpid))
+
+            if message is not None:
+                log.debug(message)
+            port = open_flow.OFPP_FLOOD
+            msg.actions.append(open_flow.ofp_action_output(port=port))
+        else:
+            pass
         msg.data = event.ofp
         msg.in_port = event.port
-        event.connection.send(msg)
+        self.connection.send(msg)
 
     def get_minimum_paths(self, dst_pid):
         adjacents = self.get_adjacents(dst_pid)
@@ -113,24 +122,16 @@ class Controller(EventMixin):
                     paths.append(a_path + [an_adjacent])
         return self.filter_paths_not_reaches_dst(paths, dst_pid)
 
-    def find_dst_port(self, paths, dst_pid):
+    def find_dst_port(self, paths, dst_pid, dst_port):
         if len(paths) == 1:
             return paths[0][0].port1
         if len(paths) == 0:
-            return None
+            return dst_port
         for a_path in paths:
             dst_port = a_path[-1].port1
             if dst_port not in self.mac_to_port[dst_pid]:
                 return dst_port
-        """
-        port = None
-        while not port:
-            dst_port = random.choice(paths)[0].port
-            if dst_port == last_used_port[dst_pid]:
-                continue
-            port = dst_port
-        """
-        # return port
+        return dst_port
 
     def _update_flow_table(self, event, dst_port, dst_pid):
         message = "Sending packet in switch: %s '\n'" % dpidToStr(dst_pid)
@@ -146,7 +147,7 @@ class Controller(EventMixin):
         message += self.match_packet(self.tcp_packet, msg, "TCP")
         message += self.match_packet(self.udp_packet, msg, "UDP")
         msg.actions.append(open_flow.ofp_action_output(port=dst_port))
-        event.connection.send(msg)
+        self.connection.send(msg)
         print message
         used_ports[dst_pid].add(dst_port)
         self.mac_to_port[dst_pid] = dst_port
@@ -156,7 +157,7 @@ class Controller(EventMixin):
         msg.actions.append(open_flow.ofp_action_output(port=src_port))
         msg.data = event.ofp
         msg.in_port = event.port
-        event.connection.send(msg)
+        self.connection.send(msg)
 
     def filter_paths_not_reaches_dst(self, paths, pid_dst):
         dst_paths = []
@@ -187,4 +188,26 @@ class Controller(EventMixin):
                 continue
             adjacents.append(an_adjacent)
         return adjacents
+
+class MyController(object):
+    """
+  Waits for OpenFlow switches to connect and makes them learning switches.
+  """
+
+    def __init__(self):
+        core.openflow.addListeners(self)
+
+    def _handle_ConnectionUp(self, event):
+        log.debug("Connection %s" % (event.connection,))
+        Controller(event.connection)
+
+
+def launch(hold_down=_flood_delay):
+    try:
+        global _flood_delay
+        _flood_delay = int(str(hold_down), 10)
+        assert _flood_delay >= 0
+    except:
+        raise RuntimeError("Expected hold-down to be a number")
+    core.registerNew(MyController)
 

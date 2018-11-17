@@ -7,16 +7,17 @@ def launch ():
     import pox.openflow.discovery
     import pox.openflow.spanning_tree
     import pox.host_tracker
-    from controller import Controller
+    import controller
 
     pox.log.color.launch()
     pox.log.launch(
         format=
         "[@@@bold@@@level%(name)-22s@@@reset] " + "@@@bold%(message)s@@@normal")
-    pox.log.level.launch(packet=logging.WARN, host_tracker=logging.INFO)
     pox.openflow.discovery.launch()
+    pox.log.level.launch(packet=logging.WARN, host_tracker=logging.INFO)
     core.getLogger("openflow.spanning_tree").setLevel("INFO")
-    core.getLogger().debug("Using forwarding: %s", Controller.__name__)
-    core.registerNew(Controller)
+    name = controller.MyController.__name__
+    core.getLogger().debug("Using forwarding: %s", name)
+    controller.launch()
     pox.openflow.spanning_tree.launch()
     pox.host_tracker.launch()
