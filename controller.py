@@ -186,10 +186,10 @@ class Controller(EventMixin):
             adjacents.append(an_adjacent)
         return adjacents
 
-class MyController(EventMixin):
+class MyController(object):
     """
-  Waits for OpenFlow switches to connect and makes them learning switches.
-  """
+    Waits for OpenFlow switches to connect and makes them learning switches.
+    """
 
     def __init__(self):
         core.openflow.addListeners(self)
