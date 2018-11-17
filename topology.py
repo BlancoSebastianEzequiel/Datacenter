@@ -2,45 +2,44 @@ from mininet.topo import Topo
 
 
 class Topology(Topo):
-    def __init__(self, number_of_levels):
+    def __init__(self, number_of_levels=3, number_of_clients=3):
         """
         :type number_of_levels: int
         """
         Topo.__init__(self)
-        number_of_clients = 3
-        devices = {}
-        h_offset = 1
-        for i in range(0, number_of_levels):
-            number_of_switches = 2 ** i
-            self.add_links_and_switches(number_of_switches, devices)
-            if i == 0:
-                self.add_hosts(number_of_clients, devices, True, h_offset)
-                h_offset += number_of_clients
-            if i == number_of_levels - 1:
-                self.add_hosts(number_of_switches, devices, False, h_offset)
+        self.level_links = {}
+        self.sw_num = 1
+        self.h_num = 1
+        self.number_of_levels = number_of_levels
+        self.number_of_clients = number_of_clients
+        self.add_clients()
+        self.add_switches_and_links()
+        self.add_content_providers()
 
-    def add_hosts(self, number_of_host, devices, is_root, offset):
-        for i in range(0, number_of_host):
-            host_name = 'h%s' % (i + offset)
-            devices[host_name] = self.addHost(host_name)
-            self.add_host_links(i + offset, devices, is_root)
+    def add_clients(self):
+        self.level_links[0] = []
+        for i in range(0, self.number_of_clients):
+            self.level_links[0].append(self.addHost('h%s' % self.h_num))
+            self.h_num += 1
 
-    def add_links_and_switches(self, number_of_switches, devices):
-        for i in range(0, number_of_switches):
-            switch_name = 's%s' % (i + number_of_switches)
-            devices[switch_name] = self.addSwitch(switch_name)
-            for j in range(0, number_of_switches/2):
-                another_device = devices['s%s' % (j + number_of_switches/2)]
-                self.addLink(devices[switch_name], another_device)
+    def add_switches_and_links(self):
+        for level in range(0, self.number_of_levels):
+            next_level = level + 1
+            number_of_switches_in_level = 2 ** level
+            self.level_links[next_level] = []
+            for i in range(0, number_of_switches_in_level):
+                sw = self.addSwitch('s%s' % self.sw_num)
+                self.level_links[next_level].append(sw)
+                self.sw_num += 1
+                for device in self.level_links[level]:
+                    self.addLink(sw, device)
 
-    def add_host_links(self, host_number, devices, is_root):
-        host_name = 'h%s' % host_number
-        if is_root:
-            self.addLink(devices[host_name], devices['s1'])
-            return
-        self.addLink(devices[host_name], devices['s%s' % host_number])
+    def add_content_providers(self):
+        for sw in self.level_links[self.number_of_levels]:
+            self.addLink(sw, self.addHost('h%s' % self.h_num))
+            self.h_num += 1
 
 
 topos = {
-    'mytopo': (lambda: Topology(3))
+    'mytopo': (lambda: Topology())
 }
