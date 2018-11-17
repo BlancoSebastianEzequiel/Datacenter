@@ -10,7 +10,7 @@ import random
 log = core.getLogger()
 policyFile = "%s/pox/pox/misc/firewall-policies.csv" % os.environ['HOME']
 used_ports = {}
-last_port_used = {}
+last_used_port = {}
 
 class Controller(EventMixin):
 
@@ -82,7 +82,7 @@ class Controller(EventMixin):
         port = None
         while not port:
             dst_port = random.choice(paths)[0].port1
-            if dst_port == last_port_used[dst_pid]:
+            if dst_port == last_used_port[dst_pid]:
                 continue
             port = dst_port
         return port
@@ -103,7 +103,7 @@ class Controller(EventMixin):
         event.connection.send(msg)
         print message
         used_ports[dst_pid].add(src_port)
-        last_port_used[dst_pid] = src_port
+        last_used_port[dst_pid] = src_port
 
     def _send_packet(self, event, src_port):
         msg = open_flow.ofp_packet_out()
