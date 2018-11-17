@@ -23,15 +23,15 @@ class Topology(Topo):
         for i in range(0, number_of_host):
             host_name = 'h%s' % (i + offset)
             devices[host_name] = self.addHost(host_name)
+            self.add_host_links(i + offset, devices, is_root)
 
     def add_links_and_switches(self, number_of_switches, devices):
         for i in range(0, number_of_switches):
             switch_name = 's%s' % (i + number_of_switches)
             devices[switch_name] = self.addSwitch(switch_name)
-            some_device = devices[switch_name]
             for j in range(0, number_of_switches/2):
                 another_device = devices['s%s' % (j + number_of_switches/2)]
-                self.addLink(some_device, another_device)
+                self.addLink(devices[switch_name], another_device)
 
     def add_host_links(self, host_number, devices, is_root):
         host_name = 'h%s' % host_number
