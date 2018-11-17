@@ -1,16 +1,21 @@
 from pox.core import core
-from pox.lib.revent import *
 import pox.openflow.libopenflow_01 as open_flow
 import pox.lib.packet as pkt
-from pox.lib.addresses import EthAddr, IPAddr
 from pox.lib.util import dpid_to_str
 import time
 
 log = core.getLogger()
-used_ports = {}
 _flood_delay = 0
 
-class Controller(EventMixin):
+class Controller(object):
+
+    tcp_packet = None
+    udp_packet = None
+    ip4_packet = None
+    eth_packet = None
+    arp_packet = None
+    ip6_packet = None
+    icmp_packet = None
 
     def __init__(self, event):
         self.mac_to_port = {}
@@ -18,41 +23,34 @@ class Controller(EventMixin):
         self.connection = event.connection
         self.hold_down_expired = _flood_delay == 0
         self.connection.addListeners(self)
+        self.event = event
 
-    def _handle_packet_in(self, event):
+    def _handle_PacketIn (self, event):
         """
         :type event: pox.openflow.ConnectionUp
         """
-        print "++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        print "_handle_Packet_in: ", event
-        print "++++++++++++++++++++++++++++++++++++++++++++++++++++"
         packet = event.parsed
-        src_port = packet.port
-        src_pid = self.connection.dpid
-        if not packet.parsed:
+        src_port = event.port
+        src_pid = event.dpid
+        if not packet:
             log.warning("%i %i ignoring not parsed packet", src_pid, src_port)
             return
         self.icmp_packet = packet.find(pkt.icmp)
-        self.ip6_packet = packet.find(pkt.ipv6)
         self.arp_packet = packet.find(pkt.arp)
         self.eth_packet = packet.find(pkt.ethernet)
         self.ip4_packet = packet.find(pkt.ipv4)
         self.tcp_packet = packet.find(pkt.tcp)
         self.udp_packet = packet.find(pkt.udp)
-
         packets = [
             self.icmp_packet,
             self.tcp_packet,
             self.udp_packet,
             self.arp_packet
         ]
-        if packets == [None]*4:
+        if packets == [None] * 4:
             return
-        if self.ip6_packet is not None:
-            return
-
-        self.flood(event)
-        self.drop(event, packet)
+        self.flood(event=event)
+        self.drop(event=event, packet=packet)
 
     def flood(self, message=None, event=None):
         msg = open_flow.ofp_packet_out()
@@ -90,24 +88,29 @@ class Controller(EventMixin):
             self.connection.send(msg)
 
         # Update address/port table
-        self.macToPort[packet.src] = event.port
+        self.mac_to_port[packet.src] = event.port
+        if packet.type == packet.LLDP_TYPE or packet.dst.isBridgeFiltered():
+            self.drop(event=event, packet=packet)
+            return
         if packet.dst.is_multicast:
-            self.flood(event)
+            self.flood(event=event)
         if packet.dst not in self.mac_to_port:
-            self.flood("Port for %s unknown -- flooding" % packet.dst, event)
+            message = "Port for %s unknown -- flooding" % packet.dst
+            self.flood(message=message, event=event)
         dst_port = self.macToPort[packet.dst]
-        dst_pid = packet.dst
+        dst_pid = event.dst
         if event.port == dst_port:
             data = (packet.src, packet.dst, dpid_to_str(event.dpid), dst_port)
             msg = "Same port for packet from %s -> %s on %s.%s.  Drop." % data
             log.warning(msg)
-            self.drop(10, event, packet)
+            self.drop(duration=10, event=event, packet=packet)
             return
 
         paths = self.get_minimum_paths(dst_pid)
         dst_port = self.find_dst_port(paths, dst_pid, dst_port)
-        self.update_flow_table(event, dst_port, dst_pid)
+        self.update_flow_table(dst_port, dst_pid)
         self.send_packet(event, dst_port)
+        return
 
     def get_minimum_paths(self, dst_pid):
         adjacents = self.get_adjacents(dst_pid)
@@ -130,7 +133,7 @@ class Controller(EventMixin):
                 return dst_port
         return dst_port
 
-    def update_flow_table(self, event, dst_port, dst_pid):
+    def update_flow_table(self, dst_port, dst_pid):
         message = "Sending packet in switch: %s '\n'" % dpid_to_str(dst_pid)
         message += "eth:%s -> %s '\n'" % \
                    (self.eth_packet.src, self.eth_packet.dst)
@@ -146,12 +149,11 @@ class Controller(EventMixin):
         msg.actions.append(open_flow.ofp_action_output(port=dst_port))
         self.connection.send(msg)
         print message
-        used_ports[dst_pid].add(dst_port)
         self.mac_to_port[dst_pid] = dst_port
 
-    def send_packet(self, event, src_port):
+    def send_packet(self, event, dst_port):
         msg = open_flow.ofp_packet_out()
-        msg.actions.append(open_flow.ofp_action_output(port=src_port))
+        msg.actions.append(open_flow.ofp_action_output(port=dst_port))
         msg.data = event.ofp
         msg.in_port = event.port
         self.connection.send(msg)
@@ -178,10 +180,10 @@ class Controller(EventMixin):
         msg.match.tp_dst = packet.dstport
         return "\n%s: %s -> %s" % (protocol, packet.srcport, packet.dstport)
 
-    def get_adjacents(self, dst_pid):
+    def get_adjacents(self, dpid):
         adjacents = []
         for an_adjacent in core.openflow_discovery.adjacency:
-            if an_adjacent.dpid1 != dst_pid:
+            if an_adjacent.dpid1 != dpid:
                 continue
             adjacents.append(an_adjacent)
         return adjacents
@@ -195,7 +197,7 @@ class MyController(object):
         core.openflow.addListeners(self)
 
     def _handle_ConnectionUp(self, event):
-        log.debug("Connection %s" % (event.connection,))
+        log.debug("Connection %s" % event.connection)
         Controller(event)
 
 

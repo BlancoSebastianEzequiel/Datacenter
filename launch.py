@@ -7,12 +7,9 @@ def launch ():
     from pox.core import core
     import pox.openflow.discovery
     pox.openflow.discovery.launch()
-
-    import controller as c
     core.getLogger("openflow.spanning_tree").setLevel("INFO")
-    core.getLogger().debug("Using forwarding: %s", c.__name__)
-    c.launch()
-
+    import controller
+    controller.launch()
     import pox.openflow.spanning_tree
     pox.openflow.spanning_tree.launch()
 
