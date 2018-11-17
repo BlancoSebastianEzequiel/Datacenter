@@ -41,5 +41,5 @@ class Topology(Topo):
 
 
 topos = {
-    'mytopo': (lambda: Topology())
+    'mytopo': (lambda levels=3, clients=3: Topology(levels, clients))
 }
