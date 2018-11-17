@@ -3,18 +3,18 @@ from pox.lib.revent import *
 import pox.openflow.libopenflow_01 as open_flow
 import pox.lib.packet as pkt
 from pox.lib.addresses import EthAddr, IPAddr
-from pox.lib.util import dpidToStr
-import os
+from pox.lib.util import dpid_to_str
 import random
 
 log = core.getLogger()
-policyFile = "%s/pox/pox/misc/firewall-policies.csv" % os.environ['HOME']
 used_ports = {}
 last_used_port = {}
 
 class Controller(EventMixin):
 
     def __init__(self):
+        self.mac_to_port = {}
+        self.msg = open_flow.ofp_packet_out()
         core.openflow.addListeners(self)
 
     def _handle_Connection_up(self, event):
@@ -29,36 +29,79 @@ class Controller(EventMixin):
 
     def _handle_Packet_in(self, event):
         src_port = event.port
-        src_pid = event.connection.dpid
+        src_pid = event.dpid
         packet = event.parsed
         if not packet.parsed:
             log.warning("%i %i ignoring not parsed packet", src_pid, src_port)
             return
-        icmp_packet = packet.find(pkt.icmp)
-        ip6_packet = packet.find(pkt.ipv6)
-        arp_packet = packet.find(pkt.arp)
-        eth_packet = packet.find(pkt.ethernet)
-        ip4_packet = packet.find(pkt.ipv4)
-        tcp_packet = packet.find(pkt.tcp)
-        udp_packet = packet.find(pkt.udp)
+        self.icmp_packet = packet.find(pkt.icmp)
+        self.ip6_packet = packet.find(pkt.ipv6)
+        self.arp_packet = packet.find(pkt.arp)
+        self.eth_packet = packet.find(pkt.ethernet)
+        self.ip4_packet = packet.find(pkt.ipv4)
+        self.tcp_packet = packet.find(pkt.tcp)
+        self.udp_packet = packet.find(pkt.udp)
 
-        if [icmp_packet, tcp_packet, udp_packet, arp_packet] == [None]*4:
+        packets = [
+            self.icmp_packet,
+            self.tcp_packet,
+            self.udp_packet,
+            self.arp_packet
+        ]
+        if packets == [None]*4:
             return
-        if ip6_packet is not None:
+        if self.ip6_packet is not None:
             return
-        packets = [ip4_packet, eth_packet, tcp_packet, udp_packet, arp_packet]
-        self.flood(event, packets, src_pid)
 
-    def flood(self, event, packets, src_pid):
-        ip4_packet, eth_packet, tcp_packet, udp_packet, arp_packet = packets
-        dst_pid, dst_entry = self.find_dst(event, arp_packet, eth_packet)
-        if src_pid == dst_pid:
-            src_port = dst_entry.port
-        else:
-            paths = self.get_minimum_paths(dst_pid)
-            src_port = self.find_dst_port(paths, dst_pid)
-        self._update_flow_table(event, packets, src_port, dst_pid)
-        self._send_packet(event, src_port)
+        self.flood(event)
+        self.drop(event, packet)
+
+    def drop(self, duration=None, event=None, packet=None):
+        if duration is not None:
+            if not isinstance(duration, tuple):
+                duration = (duration, duration)
+            msg = open_flow.ofp_flow_mod()
+            msg.match = open_flow.ofp_match.from_packet(packet)
+            msg.idle_timeout = duration[0]
+            msg.hard_timeout = duration[1]
+            msg.buffer_id = event.ofp.buffer_id
+            event.connection.send(msg)
+        elif event.ofp.buffer_id is not None:
+            msg = open_flow.ofp_packet_out()
+            msg.buffer_id = event.ofp.buffer_id
+            msg.in_port = event.port
+            event.connection.send(msg)
+
+        # Update address/port table
+        self.macToPort[packet.src] = event.port
+        if packet.dst.is_multicast:
+            self.flood(event)
+        if packet.dst not in self.mac_to_port:
+            self.flood("Port for %s unknown -- flooding" % packet.dst, event)
+        dst_port = self.macToPort[packet.dst]
+        dst_pid = packet.dst
+        if event.port == dst_port:
+            data = (packet.src, packet.dst, dpid_to_str(event.dpid), dst_port)
+            msg = "Same port for packet from %s -> %s on %s.%s.  Drop." % data
+            log.warning(msg)
+            self.drop(10, event, packet)
+            return
+
+        paths = self.get_minimum_paths(dst_pid)
+        dst_port = self.find_dst_port(paths, dst_pid)
+        self._update_flow_table(event, dst_port, dst_pid)
+        self._send_packet(event, dst_port)
+
+
+    def flood(self, message=None, event=None):
+        if message is not None:
+            log.debug(message)
+        msg = open_flow.ofp_packet_out()
+        port = open_flow.OFPP_FLOOD
+        msg.actions.append(open_flow.ofp_action_output(port=port))
+        msg.data = event.ofp
+        msg.in_port = event.port
+        event.connection.send(msg)
 
     def get_minimum_paths(self, dst_pid):
         adjacents = self.get_adjacents(dst_pid)
@@ -77,33 +120,36 @@ class Controller(EventMixin):
             return None
         for a_path in paths:
             dst_port = a_path[-1].port1
-            if dst_port not in used_ports[dst_pid]:
+            if dst_port not in self.mac_to_port[dst_pid]:
                 return dst_port
+        """
         port = None
         while not port:
-            dst_port = random.choice(paths)[0].port1
+            dst_port = random.choice(paths)[0].port
             if dst_port == last_used_port[dst_pid]:
                 continue
             port = dst_port
-        return port
+        """
+        # return port
 
-    def _update_flow_table(self, event, packets, src_port, dst_pid):
-        ip4_packet, eth_packet, tcp_packet, udp_packet = packets
+    def _update_flow_table(self, event, dst_port, dst_pid):
         message = "Sending packet in switch: %s '\n'" % dpidToStr(dst_pid)
-        message += "eth:%s -> %s '\n'" % (eth_packet.src, eth_packet.dst)
+        message += "eth:%s -> %s '\n'" % \
+                   (self.eth_packet.src, self.eth_packet.dst)
         msg = open_flow.ofp_flow_mod()
-        msg.match.dl_type = eth_packet.type
-        msg.match.nw_src = ip4_packet.srcip
-        msg.match.nw_dst = ip4_packet.dstip
-        msg.match.nw_proto = ip4_packet.protocol
-        message += "IPv4: %s -> %s" % (ip4_packet.srcip, ip4_packet.dstip)
-        message += self.match_packet(tcp_packet, msg, "TCP")
-        message += self.match_packet(udp_packet, msg, "UDP")
-        msg.actions.append(open_flow.ofp_action_output(port=src_port))
+        msg.match.dl_type = self.eth_packet.type
+        msg.match.nw_src = self.ip4_packet.srcip
+        msg.match.nw_dst = self.ip4_packet.dstip
+        msg.match.nw_proto = self.ip4_packet.protocol
+        message += "IPv4: %s -> %s" % \
+                   (self.ip4_packet.srcip, self.ip4_packet.dstip)
+        message += self.match_packet(self.tcp_packet, msg, "TCP")
+        message += self.match_packet(self.udp_packet, msg, "UDP")
+        msg.actions.append(open_flow.ofp_action_output(port=dst_port))
         event.connection.send(msg)
         print message
-        used_ports[dst_pid].add(src_port)
-        last_used_port[dst_pid] = src_port
+        used_ports[dst_pid].add(dst_port)
+        self.mac_to_port[dst_pid] = dst_port
 
     def _send_packet(self, event, src_port):
         msg = open_flow.ofp_packet_out()
@@ -111,25 +157,6 @@ class Controller(EventMixin):
         msg.data = event.ofp
         msg.in_port = event.port
         event.connection.send(msg)
-
-    def find_dst(self, event, arp_packet, eth_packet):
-        src_pid = event.connection.dpid
-        switch = dpidToStr(src_pid) + " --- dst=" + str(eth_packet.dst)
-        if arp_packet is None:
-            log.info("Flooding packet in switch: " + switch)
-        msg = open_flow.ofp_packet_out()
-        port = open_flow.OFPP_FLOOD
-        msg.actions.append(open_flow.ofp_action_output(port=port))
-        msg.data = event.ofp
-        msg.in_port = event.port
-        event.connection.send(msg)
-        dst_entry = core.host_tracker.getMacEntry(eth_packet.dst)
-        if dst_entry is None or arp_packet is not None:
-            return self.find_dst(event, arp_packet, eth_packet)
-        switch = dpidToStr(src_pid) + " --- dst=" + str(eth_packet.dst)
-        log.info("Calculating packet path in switch: " + switch)
-        dst_pid = dst_entry.dpid
-        return dst_pid, dst_entry
 
     def filter_paths_not_reaches_dst(self, paths, pid_dst):
         dst_paths = []
