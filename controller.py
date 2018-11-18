@@ -1,8 +1,7 @@
 from pox.core import core
-import pox.openflow.libopenflow_01 as open_flow
+import pox.openflow.libopenflow_01 as of
 import pox.lib.packet as pkt
 from pox.lib.util import dpid_to_str
-import time
 
 log = core.getLogger()
 _flood_delay = 0
@@ -29,6 +28,7 @@ class Controller(object):
         """
         :type event: pox.openflow.ConnectionUp
         """
+
         packet = event.parsed
         src_port = event.port
         src_pid = event.dpid
@@ -51,93 +51,109 @@ class Controller(object):
             return
         self.flood(event=event)
         self.drop(event=event, packet=packet)
+        self.build_table(event=event, packet=packet)
 
     def flood(self, message=None, event=None):
-        msg = open_flow.ofp_packet_out()
+        """
         if time.time() - self.connection.connect_time >= _flood_delay:
             if self.hold_down_expired is False:
                 self.hold_down_expired = True
                 log.info("%s: Flood hold-down expired -- flooding",
                          dpid_to_str(event.dpid))
-
             if message is not None:
                 log.debug(message)
-            port = open_flow.OFPP_FLOOD
-            msg.actions.append(open_flow.ofp_action_output(port=port))
         else:
             pass
+        """
+        msg = of.ofp_packet_out()
+        if message is not None:
+            log.debug(message)
+        msg.actions.append(of.ofp_action_output(port=of.OFPP_FLOOD))
         msg.data = event.ofp
         msg.in_port = event.port
         self.connection.send(msg)
 
-
     def drop(self, duration=None, event=None, packet=None):
         if duration is not None:
-            if not isinstance(duration, tuple):
-                duration = (duration, duration)
-            msg = open_flow.ofp_flow_mod()
-            msg.match = open_flow.ofp_match.from_packet(packet)
-            msg.idle_timeout = duration[0]
-            msg.hard_timeout = duration[1]
+            msg = of.ofp_flow_mod()  # install a flow table entry.
+            msg.match = of.ofp_match.from_packet(packet)
+            msg.idle_timeout = duration
+            msg.hard_timeout = duration
             msg.buffer_id = event.ofp.buffer_id
             self.connection.send(msg)
         elif event.ofp.buffer_id is not None:
-            msg = open_flow.ofp_packet_out()
+            msg = of.ofp_packet_out()  # instructs a switch to send a packet.
             msg.buffer_id = event.ofp.buffer_id
             msg.in_port = event.port
             self.connection.send(msg)
 
+    def build_table(self, event=None, packet=None):
         # Update address/port table
         self.mac_to_port[packet.src] = event.port
         if packet.type == packet.LLDP_TYPE or packet.dst.isBridgeFiltered():
             self.drop(event=event, packet=packet)
             return
+        """
         if packet.dst.is_multicast:
-            self.flood(event=event)
+            msg = "Port for %s multicast -- flooding" % packet.dst
+            self.flood(message=msg, event=event)
+            return
+        """
+        self.print_msg("BEGIN")
         if packet.dst not in self.mac_to_port:
             message = "Port for %s unknown -- flooding" % packet.dst
             self.flood(message=message, event=event)
-        dst_port = self.macToPort[packet.dst]
-        dst_pid = event.dst
+            paths = self.get_minimum_paths(event.dpid, self.connection.dpid)
+            dst_port = self.find_dst_port(paths, self.connection.dpid)
+            if dst_port is None:
+                return
+            self.mac_to_port[packet.dst] = dst_port
+            self.print_msg("mac_to_port[%s] = %s" % (packet.dst, dst_port))
+        dst_port = self.mac_to_port[packet.dst]
         if event.port == dst_port:
+            self.print_msg("equals")
             data = (packet.src, packet.dst, dpid_to_str(event.dpid), dst_port)
             msg = "Same port for packet from %s -> %s on %s.%s.  Drop." % data
             log.warning(msg)
             self.drop(duration=10, event=event, packet=packet)
             return
-
-        paths = self.get_minimum_paths(dst_pid)
-        dst_port = self.find_dst_port(paths, dst_pid, dst_port)
-        self.update_flow_table(dst_port, dst_pid)
+        self.update_flow_table(dst_port, packet.dst)
         self.send_packet(event, dst_port)
-        return
+        self.print_msg("END!!!!!!!!!!!!!!!!!!!!!!!!!!!")
 
-    def get_minimum_paths(self, dst_pid):
-        adjacents = self.get_adjacents(dst_pid)
+    def print_msg(self, msg):
+        print "++++++++++++++++++++++++++++++++++++++++++++++++++++"
+        print msg
+        print "++++++++++++++++++++++++++++++++++++++++++++++++++++"
+
+    def get_minimum_paths(self, src_dpid, dst_dpid):
+        adjacents = self.get_adjacents(src_dpid)
+        if not adjacents:
+            return []
         paths = [[an_adjacent] for an_adjacent in adjacents]
-        while not self.has_reached_dst(paths, dst_pid):
+        while not self.has_reached_dst(paths, dst_dpid):
             for a_path in paths:
-                adjacents_of_last_link = self.get_adjacents(a_path[-1].dpid2)
+                adjacents_of_last_link = self.get_adjacents(a_path[-1]["dpid"])
                 for an_adjacent in adjacents_of_last_link:
                     paths.append(a_path + [an_adjacent])
-        return self.filter_paths_not_reaches_dst(paths, dst_pid)
+        return self.filter_paths_not_reaches_dst(paths, dst_dpid)
 
-    def find_dst_port(self, paths, dst_pid, dst_port):
+    def find_dst_port(self, paths, dst_pid, dst_port=None):
         if len(paths) == 1:
-            return paths[0][0].port1
+            return paths[0][0]["dpid"]
         if len(paths) == 0:
             return dst_port
         for a_path in paths:
-            dst_port = a_path[-1].port1
+            dst_port = a_path[0]["dpid"]  # es en cero? porque es el nex hob no?
             if dst_port not in self.mac_to_port[dst_pid]:
                 return dst_port
         return dst_port
 
-    def update_flow_table(self, dst_port, dst_pid):
-        message = "Sending packet in switch: %s '\n'" % dpid_to_str(dst_pid)
+    def update_flow_table(self, dst_port, dst_addr):
+        message = "Sending packet in switch: %s '\n'" % dpid_to_str(dst_addr)
         message += "eth:%s -> %s '\n'" % \
                    (self.eth_packet.src, self.eth_packet.dst)
-        msg = open_flow.ofp_flow_mod()
+        msg = of.ofp_flow_mod()
         msg.match.dl_type = self.eth_packet.type
         msg.match.nw_src = self.ip4_packet.srcip
         msg.match.nw_dst = self.ip4_packet.dstip
@@ -146,14 +162,13 @@ class Controller(object):
                    (self.ip4_packet.srcip, self.ip4_packet.dstip)
         message += self.match_packet(self.tcp_packet, msg, "TCP")
         message += self.match_packet(self.udp_packet, msg, "UDP")
-        msg.actions.append(open_flow.ofp_action_output(port=dst_port))
+        msg.actions.append(of.ofp_action_output(port=dst_port))
         self.connection.send(msg)
         print message
-        self.mac_to_port[dst_pid] = dst_port
 
     def send_packet(self, event, dst_port):
-        msg = open_flow.ofp_packet_out()
-        msg.actions.append(open_flow.ofp_action_output(port=dst_port))
+        msg = of.ofp_packet_out()
+        msg.actions.append(of.ofp_action_output(port=dst_port))
         msg.data = event.ofp
         msg.in_port = event.port
         self.connection.send(msg)
@@ -161,14 +176,15 @@ class Controller(object):
     def filter_paths_not_reaches_dst(self, paths, pid_dst):
         dst_paths = []
         for some_path in paths:
-            if some_path[-1].dpid2 != pid_dst:
+            if some_path[-1]["dpid"] != pid_dst:
                 continue
             dst_paths.append(some_path)
         return dst_paths
 
     def has_reached_dst(self, paths, pid_dst):
         for some_path in paths:
-            if some_path[-1].dpid2 != pid_dst:
+            self.print_msg("pid_dst: %s - some_path[-1]['dpid']: %s" % (pid_dst, some_path[-1]["dpid"]))
+            if some_path[-1]["dpid"] != pid_dst:
                 continue
             return True
         return False
@@ -182,10 +198,20 @@ class Controller(object):
 
     def get_adjacents(self, dpid):
         adjacents = []
+        # asi es el formato
+        # {Link(dpid1=6, port1=1, dpid2=2, port2=4): 1542509517.675606}
         for an_adjacent in core.openflow_discovery.adjacency:
-            if an_adjacent.dpid1 != dpid:
-                continue
-            adjacents.append(an_adjacent)
+            if an_adjacent.dpid1 == dpid:
+                adjacents.append({
+                    "dpid": an_adjacent.dpid2,
+                    "port": an_adjacent.port2
+                })
+            elif an_adjacent.dpid2 == dpid:
+                adjacents.append({
+                    "dpid": an_adjacent.dpid1,
+                    "port": an_adjacent.port1
+                })
+        self.print_msg("adjacents: %s" % adjacents)
         return adjacents
 
 class MyController(object):
