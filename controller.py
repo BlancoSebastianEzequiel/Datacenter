@@ -99,19 +99,16 @@ class Controller(object):
             self.flood(message=msg, event=event)
             return
         """
-        self.print_msg("BEGIN")
         if packet.dst not in self.mac_to_port:
             message = "Port for %s unknown -- flooding" % packet.dst
             self.flood(message=message, event=event)
-            paths = self.get_minimum_paths(event.dpid, self.connection.dpid)
-            dst_port = self.find_dst_port(paths, self.connection.dpid)
-            if dst_port is None:
-                return
-            self.mac_to_port[packet.dst] = dst_port
-            self.print_msg("mac_to_port[%s] = %s" % (packet.dst, dst_port))
+            # paths = self.get_minimum_paths(event.dpid, self.connection.dpid)
+            # dst_port = self.find_dst_port(paths, self.connection.dpid)
+            # if dst_port is None:
+                #return
+            # self.mac_to_port[packet.dst] = dst_port
         dst_port = self.mac_to_port[packet.dst]
         if event.port == dst_port:
-            self.print_msg("equals")
             data = (packet.src, packet.dst, dpid_to_str(event.dpid), dst_port)
             msg = "Same port for packet from %s -> %s on %s.%s.  Drop." % data
             log.warning(msg)
@@ -119,7 +116,6 @@ class Controller(object):
             return
         self.update_flow_table(dst_port, packet.dst)
         self.send_packet(event, dst_port)
-        self.print_msg("END!!!!!!!!!!!!!!!!!!!!!!!!!!!")
 
     def print_msg(self, msg):
         print "++++++++++++++++++++++++++++++++++++++++++++++++++++"
@@ -131,11 +127,16 @@ class Controller(object):
         if not adjacents:
             return []
         paths = [[an_adjacent] for an_adjacent in adjacents]
-        while not self.has_reached_dst(paths, dst_dpid):
+        exclude = src_dpid
+        max_iterations = 1000
+        i = 0
+        while not self.has_reached_dst(paths, dst_dpid) and i < max_iterations:
             for a_path in paths:
-                adjacents_of_last_link = self.get_adjacents(a_path[-1]["dpid"])
-                for an_adjacent in adjacents_of_last_link:
+                adjacents = self.get_adjacents(a_path[-1]["dpid"], exclude)
+                for an_adjacent in adjacents:
                     paths.append(a_path + [an_adjacent])
+                exclude = a_path[-1]["dpid"]
+            i += 0
         return self.filter_paths_not_reaches_dst(paths, dst_dpid)
 
     def find_dst_port(self, paths, dst_pid, dst_port=None):
@@ -183,7 +184,6 @@ class Controller(object):
 
     def has_reached_dst(self, paths, pid_dst):
         for some_path in paths:
-            self.print_msg("pid_dst: %s - some_path[-1]['dpid']: %s" % (pid_dst, some_path[-1]["dpid"]))
             if some_path[-1]["dpid"] != pid_dst:
                 continue
             return True
@@ -196,22 +196,21 @@ class Controller(object):
         msg.match.tp_dst = packet.dstport
         return "\n%s: %s -> %s" % (protocol, packet.srcport, packet.dstport)
 
-    def get_adjacents(self, dpid):
+    def get_adjacents(self, dpid, exclude=None):
         adjacents = []
         # asi es el formato
         # {Link(dpid1=6, port1=1, dpid2=2, port2=4): 1542509517.675606}
         for an_adjacent in core.openflow_discovery.adjacency:
-            if an_adjacent.dpid1 == dpid:
+            if an_adjacent.dpid1 == dpid and an_adjacent.dpid1 != exclude:
                 adjacents.append({
                     "dpid": an_adjacent.dpid2,
                     "port": an_adjacent.port2
                 })
-            elif an_adjacent.dpid2 == dpid:
+            elif an_adjacent.dpid2 == dpid and an_adjacent.dpid1 != exclude:
                 adjacents.append({
                     "dpid": an_adjacent.dpid1,
                     "port": an_adjacent.port1
                 })
-        self.print_msg("adjacents: %s" % adjacents)
         return adjacents
 
 class MyController(object):
