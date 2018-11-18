@@ -102,11 +102,11 @@ class Controller(object):
         if packet.dst not in self.mac_to_port:
             message = "Port for %s unknown -- flooding" % packet.dst
             self.flood(message=message, event=event)
-            # paths = self.get_minimum_paths(event.dpid, self.connection.dpid)
-            # dst_port = self.find_dst_port(paths, self.connection.dpid)
-            # if dst_port is None:
-                #return
-            # self.mac_to_port[packet.dst] = dst_port
+            paths = self.get_minimum_paths(event.dpid, self.connection.dpid)
+            dst_port = self.find_dst_port(paths, self.connection.dpid)
+            if dst_port is None:
+                return
+            self.mac_to_port[packet.dst] = dst_port
         dst_port = self.mac_to_port[packet.dst]
         if event.port == dst_port:
             data = (packet.src, packet.dst, dpid_to_str(event.dpid), dst_port)
