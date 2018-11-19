@@ -10,12 +10,12 @@ from entry import Entry
 from time import time
 
 log = core.getLogger()
-_flood_delay = 0
-
 
 class Controller(object):
 
     def __init__(self, fakeways=None, arp_for_unknowns=False):
+        core.openflow.addListeners(self)
+
         # These are "fake gateways" -- we'll answer ARPs for them with MAC
         # of the switch they're connected to.
         self.fakeways = set(fakeways)
@@ -36,7 +36,16 @@ class Controller(object):
         # For each switch, we map IP addresses to Entries
         self.arp_table = {}
 
+    def _handle_ConnectionUp(self, event):
+        log.debug("Connection %s" % (event.connection,))
+
+    def print_msg(self, msg):
+        print "++++++++++++++++++++++++++++++++++++++++++"
+        print msg
+        print "++++++++++++++++++++++++++++++++++++++++++"
+
     def _handle_PacketIn(self, event):
+        self.print_msg("handle!!!!")
         self.event = event
         self.dpid = event.connection.dpid
         self.inport = event.port
@@ -45,7 +54,6 @@ class Controller(object):
             log.warning("%i %i ignoring unparsed packet" %
                         (self.dpid, self.inport))
             return
-
         if self.dpid not in self.arp_table:
             self.create_empty_table()
         if self.packet.type == ethernet.LLDP_TYPE:
@@ -168,7 +176,7 @@ class Controller(object):
             return
         if a.protodst not in self.arp_table[self.dpid]:
             return
-        if self.arp_table[self.dpid][a.protodst].isExpired():
+        if self.arp_table[self.dpid][a.protodst].is_expired():
             return
         self.handle_arp_reply(a)
 
@@ -223,7 +231,6 @@ class Controller(object):
 
     def _send_lost_buffers(self, dpid, ipaddr, macaddr, port):
         if (dpid, ipaddr) in self.lost_buffers:
-            # Yup!
             bucket = self.lost_buffers[(dpid, ipaddr)]
             del self.lost_buffers[(dpid, ipaddr)]
             log.debug("Sending %i buffered packets to %s from %s"
