@@ -45,7 +45,6 @@ class Controller(object):
         print "++++++++++++++++++++++++++++++++++++++++++"
 
     def _handle_PacketIn(self, event):
-        self.print_msg("handle!!!!")
         self.event = event
         self.dpid = event.connection.dpid
         self.inport = event.port
