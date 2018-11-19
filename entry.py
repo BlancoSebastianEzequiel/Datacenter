@@ -19,9 +19,11 @@ class Entry (object):
     def __ne__(self, other):
         return not self.__eq__(other)
 
-    def isExpired(self):
-        if self.port == of.OFPP_NONE: return False
+    def is_expired(self):
+        if self.port == of.OFPP_NONE:
+            return False
         return time.time() > self.timeout
 
+    @staticmethod
     def dpid_to_mac(dpid):
         return EthAddr("%012x" % (dpid & 0xffFFffFFffFF,))
