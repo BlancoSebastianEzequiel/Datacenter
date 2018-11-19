@@ -1,237 +1,245 @@
 from pox.core import core
 import pox.openflow.libopenflow_01 as of
-import pox.lib.packet as pkt
-from pox.lib.util import dpid_to_str
+from pox.lib.packet.ipv4 import ipv4
+from pox.lib.packet.arp import arp
+from pox.lib.util import str_to_bool, dpidToStr
+from pox.lib.addresses import IPAddr, EthAddr
+from pox.lib.packet.ethernet import ethernet, ETHER_BROADCAST
+from data_definitions import *
+from entry import Entry
+from time import time
 
 log = core.getLogger()
 _flood_delay = 0
 
+
 class Controller(object):
 
-    tcp_packet = None
-    udp_packet = None
-    ip4_packet = None
-    eth_packet = None
-    arp_packet = None
-    ip6_packet = None
-    icmp_packet = None
+    def __init__(self, fakeways=None, arp_for_unknowns=False):
+        # These are "fake gateways" -- we'll answer ARPs for them with MAC
+        # of the switch they're connected to.
+        self.fakeways = set(fakeways)
 
-    def __init__(self, event):
-        self.mac_to_port = {}
-        core.openflow.addListeners(self)
-        self.connection = event.connection
-        self.hold_down_expired = _flood_delay == 0
-        self.connection.addListeners(self)
+        # If this is true and we see a packet for an unknown
+        # host, we'll ARP for it.
+        self.arp_for_unknowns = arp_for_unknowns
+
+        # (dpid,IP) -> expire_time
+        # We use this to keep from spamming ARPs
+        self.outstanding_arps = {}
+
+        # (dpid,IP) -> [(expire_time, buffer_id,in_port), ...]
+        # These are buffers we've gotten at this datapath for this IP which
+        # we can't deliver because we don't know where they go.
+        self.lost_buffers = {}
+
+        # For each switch, we map IP addresses to Entries
+        self.arp_table = {}
+
+    def _handle_PacketIn(self, event):
         self.event = event
-
-    def _handle_PacketIn (self, event):
-        """
-        :type event: pox.openflow.ConnectionUp
-        """
-
-        packet = event.parsed
-        src_port = event.port
-        src_pid = event.dpid
-        if not packet:
-            log.warning("%i %i ignoring not parsed packet", src_pid, src_port)
+        self.dpid = event.connection.dpid
+        self.inport = event.port
+        self.packet = event.parsed
+        if not self.packet.parsed:
+            log.warning("%i %i ignoring unparsed packet" %
+                        (self.dpid, self.inport))
             return
-        self.icmp_packet = packet.find(pkt.icmp)
-        self.arp_packet = packet.find(pkt.arp)
-        self.eth_packet = packet.find(pkt.ethernet)
-        self.ip4_packet = packet.find(pkt.ipv4)
-        self.tcp_packet = packet.find(pkt.tcp)
-        self.udp_packet = packet.find(pkt.udp)
-        packets = [
-            self.icmp_packet,
-            self.tcp_packet,
-            self.udp_packet,
-            self.arp_packet
-        ]
-        if packets == [None] * 4:
-            return
-        self.flood(event=event)
-        self.drop(event=event, packet=packet)
-        self.build_table(event=event, packet=packet)
 
-    def flood(self, message=None, event=None):
-        """
-        if time.time() - self.connection.connect_time >= _flood_delay:
-            if self.hold_down_expired is False:
-                self.hold_down_expired = True
-                log.info("%s: Flood hold-down expired -- flooding",
-                         dpid_to_str(event.dpid))
-            if message is not None:
-                log.debug(message)
-        else:
-            pass
-        """
+        if self.dpid not in self.arp_table:
+            self.create_empty_table()
+        if self.packet.type == ethernet.LLDP_TYPE:
+            return
+        self.handle_ip_packet()
+        self.handle_arp_packet()
+
+    @staticmethod
+    def dpid_to_mac(dpid):
+        return EthAddr("%012x" % (dpid & 0xffFFffFFffFF,))
+
+    def create_empty_table(self):
+        self.arp_table[self.dpid] = {}
+        for fake in self.fakeways:
+            entry = Entry(of.OFPP_NONE, self.dpid_to_mac(self.dpid))
+            self.arp_table[self.dpid][IPAddr(fake)] = entry
+
+    def handle_ip_packet(self):
+        if not isinstance(self.packet.next, ipv4):
+            return
+        log.debug("%i %i IP %s => %s" %
+                  (self.dpid, self.inport, self.packet.next.srcip,
+                   self.packet.next.dstip))
+
+        self._send_lost_buffers(
+            self.dpid, self.packet.next.srcip, self.packet.src, self.inport)
+        self.learn_or_update_port_mac_info(self.packet.next.srcip)
+
+        dstaddr = self.packet.next.dstip
+        if dstaddr in self.arp_table[self.dpid]:
+            self.send(dstaddr)
+        elif self.arp_for_unknowns:
+            self.find_unknown_dst(dstaddr)
+
+    def find_unknown_dst(self, dstaddr):
+        if (self.dpid, dstaddr) not in self.lost_buffers:
+            self.lost_buffers[(self.dpid, dstaddr)] = []
+        bucket = self.lost_buffers[(self.dpid, dstaddr)]
+        entry = (time() + MAX_BUFFER_TIME, self.event.ofp.buffer_id,
+                 self.inport)
+        bucket.append(entry)
+        while len(bucket) > MAX_BUFFERED_PER_IP:
+            del bucket[0]
+        self.outstanding_arps = {
+            k: v for k, v in self.outstanding_arps.iteritems() if v > time()
+        }
+        if (self.dpid, dstaddr) in self.outstanding_arps:
+            return
+        self.outstanding_arps[(self.dpid, dstaddr)] = time() + 4
+        self.handle_ip_reply(dstaddr)
+
+    def handle_ip_reply(self, dstaddr):
+        r = arp()
+        r.hwtype = r.HW_TYPE_ETHERNET
+        r.prototype = r.PROTO_TYPE_IP
+        r.hwlen = 6
+        r.protolen = r.protolen
+        r.opcode = r.REQUEST
+        r.hwdst = ETHER_BROADCAST
+        r.protodst = dstaddr
+        r.hwsrc = self.packet.src
+        r.protosrc = self.packet.next.srcip
+        e = ethernet(type=ethernet.ARP_TYPE, src=self.packet.src,
+                     dst=ETHER_BROADCAST)
+        e.set_payload(r)
+        log.debug("%i %i ARPing for %s on behalf of %s" % (
+            self.dpid, self.inport, str(r.protodst), str(r.protosrc)))
         msg = of.ofp_packet_out()
-        if message is not None:
-            log.debug(message)
+        msg.data = e.pack()
         msg.actions.append(of.ofp_action_output(port=of.OFPP_FLOOD))
-        msg.data = event.ofp
-        msg.in_port = event.port
-        self.connection.send(msg)
+        msg.in_port = self.inport
+        self.event.connection.send(msg)
 
-    def drop(self, duration=None, event=None, packet=None):
-        if duration is not None:
-            msg = of.ofp_flow_mod()  # install a flow table entry.
-            msg.match = of.ofp_match.from_packet(packet)
-            msg.idle_timeout = duration
-            msg.hard_timeout = duration
-            msg.buffer_id = event.ofp.buffer_id
-            self.connection.send(msg)
-        elif event.ofp.buffer_id is not None:
-            msg = of.ofp_packet_out()  # instructs a switch to send a packet.
-            msg.buffer_id = event.ofp.buffer_id
-            msg.in_port = event.port
-            self.connection.send(msg)
-
-    def build_table(self, event=None, packet=None):
-        # Update address/port table
-        self.mac_to_port[packet.src] = event.port
-        if packet.type == packet.LLDP_TYPE or packet.dst.isBridgeFiltered():
-            self.drop(event=event, packet=packet)
+    def send(self, dstaddr):
+        prt = self.arp_table[self.dpid][dstaddr].port
+        mac = self.arp_table[self.dpid][dstaddr].mac
+        if prt == self.inport:
+            msg = "%i %i not sending packet for %s back out of the input port"
+            data = (self.dpid, self.inport, str(dstaddr))
+            log.warning(msg % data)
             return
-        """
-        if packet.dst.is_multicast:
-            msg = "Port for %s multicast -- flooding" % packet.dst
-            self.flood(message=msg, event=event)
+        msg = "%i %i installing flow for %s => %s out port %i"
+        data = (self.dpid, self.inport, self.packet.next.srcip, dstaddr, prt)
+        log.debug(msg % data)
+        actions = [
+            of.ofp_action_dl_addr.set_dst(mac),
+            of.ofp_action_output(port=prt)
+        ]
+        match = of.ofp_match.from_packet(self.packet, self.inport)
+        match.dl_src = None
+        msg = of.ofp_flow_mod(
+            command=of.OFPFC_ADD,
+            idle_timeout=FLOW_IDLE_TIMEOUT,
+            hard_timeout=of.OFP_FLOW_PERMANENT,
+            buffer_id=self.event.ofp.buffer_id,
+            actions=actions,
+            match=of.ofp_match.from_packet(self.packet, self.inport))
+        self.event.connection.send(msg.pack())
+
+    def handle_arp_packet(self):
+        if not isinstance(self.packet.next, arp):
             return
-        """
-        if packet.dst not in self.mac_to_port:
-            message = "Port for %s unknown -- flooding" % packet.dst
-            self.flood(message=message, event=event)
-            paths = self.get_minimum_paths(event.dpid, self.connection.dpid)
-            dst_port = self.find_dst_port(paths, self.connection.dpid)
-            if dst_port is None:
-                return
-            self.mac_to_port[packet.dst] = dst_port
-        dst_port = self.mac_to_port[packet.dst]
-        if event.port == dst_port:
-            data = (packet.src, packet.dst, dpid_to_str(event.dpid), dst_port)
-            msg = "Same port for packet from %s -> %s on %s.%s.  Drop." % data
-            log.warning(msg)
-            self.drop(duration=10, event=event, packet=packet)
+        a = self.packet.next
+        self.log_flood_message(a)
+
+        if a.prototype != arp.PROTO_TYPE_IP:
+            self.flood_2(a)
             return
-        self.update_flow_table(dst_port, packet.dst)
-        self.send_packet(event, dst_port)
+        if a.hwtype != arp.HW_TYPE_ETHERNET:
+            return
+        if a.protosrc == 0:
+            return
 
-    def print_msg(self, msg):
-        print "++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        print msg
-        print "++++++++++++++++++++++++++++++++++++++++++++++++++++"
+        self.learn_or_update_port_mac_info(a.protosrc)
 
-    def get_minimum_paths(self, src_dpid, dst_dpid):
-        adjacents = self.get_adjacents(src_dpid)
-        if not adjacents:
-            return []
-        paths = [[an_adjacent] for an_adjacent in adjacents]
-        exclude = src_dpid
-        max_iterations = 1000
-        i = 0
-        while not self.has_reached_dst(paths, dst_dpid) and i < max_iterations:
-            for a_path in paths:
-                adjacents = self.get_adjacents(a_path[-1]["dpid"], exclude)
-                for an_adjacent in adjacents:
-                    paths.append(a_path + [an_adjacent])
-                exclude = a_path[-1]["dpid"]
-            i += 0
-        return self.filter_paths_not_reaches_dst(paths, dst_dpid)
+        self._send_lost_buffers(
+            self.dpid, a.protosrc, self.packet.src, self.inport)
 
-    def find_dst_port(self, paths, dst_pid, dst_port=None):
-        if len(paths) == 1:
-            return paths[0][0]["dpid"]
-        if len(paths) == 0:
-            return dst_port
-        for a_path in paths:
-            dst_port = a_path[0]["dpid"]  # es en cero? porque es el nex hob no?
-            if dst_port not in self.mac_to_port[dst_pid]:
-                return dst_port
-        return dst_port
+        if a.opcode != arp.REQUEST:
+            return
+        if a.protodst not in self.arp_table[self.dpid]:
+            return
+        if self.arp_table[self.dpid][a.protodst].isExpired():
+            return
+        self.handle_arp_reply(a)
 
-    def update_flow_table(self, dst_port, dst_addr):
-        message = "Sending packet in switch: %s '\n'" % dpid_to_str(dst_addr)
-        message += "eth:%s -> %s '\n'" % \
-                   (self.eth_packet.src, self.eth_packet.dst)
-        msg = of.ofp_flow_mod()
-        msg.match.dl_type = self.eth_packet.type
-        msg.match.nw_src = self.ip4_packet.srcip
-        msg.match.nw_dst = self.ip4_packet.dstip
-        msg.match.nw_proto = self.ip4_packet.protocol
-        message += "IPv4: %s -> %s" % \
-                   (self.ip4_packet.srcip, self.ip4_packet.dstip)
-        message += self.match_packet(self.tcp_packet, msg, "TCP")
-        message += self.match_packet(self.udp_packet, msg, "UDP")
-        msg.actions.append(of.ofp_action_output(port=dst_port))
-        self.connection.send(msg)
-        print message
-
-    def send_packet(self, event, dst_port):
+    def handle_arp_reply(self, a):
+        r = arp()
+        r.hwtype = a.hwtype
+        r.prototype = a.prototype
+        r.hwlen = a.hwlen
+        r.protolen = a.protolen
+        r.opcode = arp.REPLY
+        r.hwdst = a.hwsrc
+        r.protodst = a.protosrc
+        r.protosrc = a.protodst
+        r.hwsrc = self.arp_table[self.dpid][a.protodst].mac
+        mac = self.dpid_to_mac(self.dpid)
+        e = ethernet(type=self.packet.type, src=mac, dst=a.hwsrc)
+        e.set_payload(r)
+        log.debug("%i %i answering ARP for %s" %
+                  (self.dpid, self.inport, str(r.protosrc)))
         msg = of.ofp_packet_out()
-        msg.actions.append(of.ofp_action_output(port=dst_port))
-        msg.data = event.ofp
-        msg.in_port = event.port
-        self.connection.send(msg)
+        msg.data = e.pack()
+        msg.actions.append(of.ofp_action_output(port=of.OFPP_IN_PORT))
+        msg.in_port = self.inport
+        self.event.connection.send(msg)
+        return
 
-    def filter_paths_not_reaches_dst(self, paths, pid_dst):
-        dst_paths = []
-        for some_path in paths:
-            if some_path[-1]["dpid"] != pid_dst:
-                continue
-            dst_paths.append(some_path)
-        return dst_paths
+    def learn_or_update_port_mac_info(self, value):
+        entry = self.arp_table[self.dpid]
+        if value in entry:
+            if entry[value] != (self.inport, self.packet.src):
+                log.info("%i %i RE-learned %s", self.dpid, self.inport, value)
+        else:
+            log.debug("%i %i learned %s", self.dpid, self.inport, str(value))
+        self.arp_table[self.dpid][value] = Entry(self.inport, self.packet.src)
 
-    def has_reached_dst(self, paths, pid_dst):
-        for some_path in paths:
-            if some_path[-1]["dpid"] != pid_dst:
-                continue
-            return True
-        return False
+    def log_flood_message(self, a):
+        dicc = {arp.REQUEST: "request", arp.REPLY: "reply"}
+        b = dicc.get(a.opcode, 'op:%i' % (a.opcode,))
+        data = (self.dpid, self.inport, b, str(a.protosrc), str(a.protodst))
+        log.debug("%i %i flooding ARP %s %s => %s" % data)
 
-    def match_packet(self, packet, msg, protocol):
-        if packet is None:
-            return ""
-        msg.match.tp_src = packet.srcport
-        msg.match.tp_dst = packet.dstport
-        return "\n%s: %s -> %s" % (protocol, packet.srcport, packet.dstport)
+    def flood_2(self, a):
+        self.log_flood_message(a)
+        action = of.ofp_action_output(port=of.OFPP_FLOOD)
+        msg = of.ofp_packet_out(in_port=self.inport, action=action)
+        if self.event.ofp.buffer_id is of.NO_BUFFER:
+            # Try sending the (probably incomplete) raw data
+            msg.data = self.event.data
+        else:
+            msg.buffer_id = self.event.ofp.buffer_id
+            self.event.connection.send(msg.pack())
 
-    def get_adjacents(self, dpid, exclude=None):
-        adjacents = []
-        # asi es el formato
-        # {Link(dpid1=6, port1=1, dpid2=2, port2=4): 1542509517.675606}
-        for an_adjacent in core.openflow_discovery.adjacency:
-            if an_adjacent.dpid1 == dpid and an_adjacent.dpid1 != exclude:
-                adjacents.append({
-                    "dpid": an_adjacent.dpid2,
-                    "port": an_adjacent.port2
-                })
-            elif an_adjacent.dpid2 == dpid and an_adjacent.dpid1 != exclude:
-                adjacents.append({
-                    "dpid": an_adjacent.dpid1,
-                    "port": an_adjacent.port1
-                })
-        return adjacents
-
-class MyController(object):
-    """
-    Waits for OpenFlow switches to connect and makes them learning switches.
-    """
-
-    def __init__(self):
-        core.openflow.addListeners(self)
-
-    def _handle_ConnectionUp(self, event):
-        log.debug("Connection %s" % event.connection)
-        Controller(event)
+    def _send_lost_buffers(self, dpid, ipaddr, macaddr, port):
+        if (dpid, ipaddr) in self.lost_buffers:
+            # Yup!
+            bucket = self.lost_buffers[(dpid, ipaddr)]
+            del self.lost_buffers[(dpid, ipaddr)]
+            log.debug("Sending %i buffered packets to %s from %s"
+                      % (len(bucket), ipaddr, dpidToStr(dpid)))
+            for _, buffer_id, in_port in bucket:
+                po = of.ofp_packet_out(buffer_id=buffer_id, in_port=in_port)
+                po.actions.append(of.ofp_action_dl_addr.set_dst(macaddr))
+                po.actions.append(of.ofp_action_output(port=port))
+                core.openflow.sendToDPID(dpid, po)
 
 
-def launch(hold_down=_flood_delay):
-    try:
-        global _flood_delay
-        _flood_delay = int(str(hold_down), 10)
-        assert _flood_delay >= 0
-    except:
-        raise RuntimeError("Expected hold-down to be a number")
-    core.registerNew(MyController)
-
+def launch(fakeways="", arp_for_unknowns=None):
+    fakeways = fakeways.replace(",", " ").split()
+    fakeways = [IPAddr(x) for x in fakeways]
+    if arp_for_unknowns is None:
+        arp_for_unknowns = len(fakeways) > 0
+    else:
+        arp_for_unknowns = str_to_bool(arp_for_unknowns)
+    core.registerNew(Controller, fakeways, arp_for_unknowns)
