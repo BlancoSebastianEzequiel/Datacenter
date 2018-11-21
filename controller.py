@@ -1,8 +1,9 @@
 from pox.core import core
 from pox.host_tracker import host_tracker
 import pox.openflow.libopenflow_01 as of
-from pox.lib.util import str_to_bool, dpidToStr
+from pox.lib.util import dpidToStr
 import pox.lib.packet as pkt
+from pox.lib.revent import *
 
 log = core.getLogger()
 
@@ -165,22 +166,4 @@ class Controller(object):
 
 
 def launch():
-    import pox.log.color
-    pox.log.color.launch()
-    import pox.log
-    pox.log.launch(format="[@@@bold@@@level%(name)-22s@@@reset] " +
-                          "@@@bold%(message)s@@@normal")
-    import pox.log.level
-    import logging
-    pox.log.level.launch(packet=logging.WARN, host_tracker=logging.INFO)
-
-    from pox.core import core
-    import pox.openflow.discovery
-    pox.openflow.discovery.launch()
-
     core.registerNew(Controller)
-    import pox.openflow.spanning_tree
-    pox.openflow.spanning_tree.launch()
-
-    import pox.host_tracker
-    pox.host_tracker.launch()
