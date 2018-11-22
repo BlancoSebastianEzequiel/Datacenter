@@ -1,5 +1,5 @@
 from pox.core import core
-from pox.host_tracker import host_tracker
+from pox.host_tracker.host_tracker import host_tracker
 import pox.openflow.libopenflow_01 as of
 from pox.lib.util import dpidToStr
 import pox.lib.packet as pkt
@@ -11,15 +11,10 @@ class Controller(object):
 
     def __init__(self):
         core.openflow.addListeners(self)
-        self.eth_packet = None
-        self.ip_packet = None
-        self.arp_packet = None
-        self.icmp_packet = None
-        self.tcp_packet = None
-        self.udp_packet = None
         self.dst_dpid = None
         self.out_port = None
         self.table = {}
+        self.host_tracker = host_tracker()
 
     def _handle_ConnectionUp(self, event):
         log.debug("Connection %s" % (event.connection,))
@@ -45,22 +40,29 @@ class Controller(object):
             log.warning(
                 "%i %i ignoring unparsed packet" % (self.dpid, self.in_port))
             return
-        if not self.get_packet():
+        if not self.validate_packets():
+            log.warning("Non validated packets")
             return
         entry = None
         while entry is None:
             self.flood()
-            entry = host_tracker.getMacEntry(self.eth_packet.dst)
+            entry = self.host_tracker.getMacEntry(self.eth_packet.dst)
 
         self.dst_dpid = entry.dpid
         if self.dpid == self.dpid:
+            log.info("Current switch is destination")
             self.out_port = entry.port
         else:
+            log.info("Finding minimun paths")
             minimun_paths = self.get_minimun_paths()
+            log.info("finding out port")
             self.out_port = self.get_out_port(minimun_paths)
             if self.out_port is None:
+                log.info("could not find out port")
                 return
+            log.info("Updating flow table")
             self.update_table()
+            log.info("Sending packet")
             self.send_packet()
 
     def flood(self):
@@ -74,20 +76,22 @@ class Controller(object):
         msg.in_port = self.in_port
         self.event.connection.send(msg)
 
-    def get_packet(self):
+    def validate_packets(self):
         self.eth_packet = self.packet.find(pkt.ethernet)
         self.ip_packet = self.packet.find(pkt.ipv4)
         self.arp_packet = self.packet.find(pkt.arp)
         self.icmp_packet = self.packet.find(pkt.icmp)
         self.tcp_packet = self.packet.find(pkt.tcp)
         self.udp_packet = self.packet.find(pkt.udp)
-        packets = [
-            self.icmp_packet,
-            self.tcp_packet,
-            self.udp_packet,
-            self.arp_packet
-        ]
-        return packets == [None]*4
+        if self.arp_packet is None:
+            return False
+        """
+        if [self.arp_packet, self.eth_packet, self.ip_packet] == [None]*3:
+            return False
+        if [self.tcp_packet, self.udp_packet] == [None]*2:
+            return False
+        """
+        return True
 
     def save_packet(self, packet, msg):
         if self.tcp_packet is None:
