@@ -10,8 +10,8 @@ def launch():
     core.getLogger("openflow.spanning_tree").setLevel("INFO")
     import controller
     controller.launch()
-    import pox.openflow.spanning_tree
-    pox.openflow.spanning_tree.launch()
     import firewall
     firewall.launch()
+    import pox.openflow.spanning_tree
+    pox.openflow.spanning_tree.launch()
 
