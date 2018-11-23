@@ -4,10 +4,8 @@ import pox.openflow.libopenflow_01 as of
 from pox.lib.util import dpidToStr
 import pox.lib.packet as pkt
 from pox.lib.revent import *
-from time import time
 
 log = core.getLogger()
-DELAY = 0
 
 class Controller(object):
 
