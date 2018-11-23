@@ -1,4 +1,4 @@
-def launch ():
+def launch():
     import pox.log.color
     pox.log.color.launch()
     import pox.log
