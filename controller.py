@@ -4,9 +4,10 @@ import pox.openflow.libopenflow_01 as of
 from pox.lib.util import dpidToStr
 import pox.lib.packet as pkt
 from pox.lib.revent import *
+from time import time
 
 log = core.getLogger()
-
+DELAY = 0
 
 class Controller(object):
 
@@ -62,10 +63,11 @@ class Controller(object):
             return
         if not self.validate_packets():
             return
-        entry = None
-        while entry is None:
-            entry = self.host_tracker.getMacEntry(self.eth_packet.dst)
-            self.flood()
+        self.flood()
+        entry = self.host_tracker.getMacEntry(self.eth_packet.dst)
+        if entry is None:
+            log.warning("Could not find dst")
+            return self.flood()
 
         self.dst_dpid = entry.dpid
         if self.dpid == self.dpid:
