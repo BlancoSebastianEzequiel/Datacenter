@@ -83,15 +83,15 @@ class Controller(object):
         self.icmp_packet = self.packet.find(pkt.icmp)
         self.tcp_packet = self.packet.find(pkt.tcp)
         self.udp_packet = self.packet.find(pkt.udp)
-        if self.arp_packet is None:
-            return False
-        """
-        if [self.arp_packet, self.eth_packet, self.ip_packet] == [None]*3:
-            return False
-        if [self.tcp_packet, self.udp_packet] == [None]*2:
-            return False
-        """
-        return True
+
+        is_arp = self.arp_packet is None
+        is_eth = self.eth_packet is None
+        is_ip = self.ip_packet is None
+        if is_arp or is_eth or is_ip:
+            return True
+        if self.tcp_packet is None or self.udp_packet is None:
+            return True
+        return False
 
     def save_packet(self, packet, msg):
         if self.tcp_packet is None:
