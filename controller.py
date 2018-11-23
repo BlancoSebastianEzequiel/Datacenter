@@ -7,6 +7,7 @@ from pox.lib.revent import *
 
 log = core.getLogger()
 
+
 class Controller(object):
 
     def __init__(self):
@@ -15,14 +16,33 @@ class Controller(object):
         self.out_port = None
         self.table = {}
         self.host_tracker = host_tracker()
+        self.eth_packet = None
+        self.ip_packet = None
+        self.arp_packet = None
+        self.icmp_packet = None
+        self.tcp_packet = None
+        self.udp_packet = None
 
     def _handle_ConnectionUp(self, event):
         log.debug("Connection %s" % (event.connection,))
-        dpid = dpidToStr(event.connection.dpid)
-        log.info("Flooding multicast packets in switch: " + dpid)
+
+        # multicast
         msg = of.ofp_flow_mod()
         msg.match.dl_dst = pkt.ETHER_BROADCAST
         msg.actions.append(of.ofp_action_output(port=of.OFPP_FLOOD))
+        event.connection.send(msg)
+
+        # arp
+        msg = of.ofp_flow_mod()
+        msg.match.dl_type = pkt.ethernet.ARP_TYPE
+        msg.actions.append(of.ofp_action_output(port=of.OFPP_FLOOD))
+        event.connection.send(msg)
+
+        self.drop_ipv6(event)
+
+    def drop_ipv6(self, event):
+        msg = of.ofp_flow_mod()
+        msg.match.dl_type = pkt.ethernet.IPV6_TYPE
         event.connection.send(msg)
 
     @staticmethod
@@ -41,13 +61,14 @@ class Controller(object):
                 "%i %i ignoring unparsed packet" % (self.dpid, self.in_port))
             return
         if not self.validate_packets():
-            log.warning("Non validated packets")
             return
         entry = None
         while entry is None:
             self.flood()
+            log.info("finding dst entry")
             entry = self.host_tracker.getMacEntry(self.eth_packet.dst)
 
+        self.print_msg("AFTER ENTRY")
         self.dst_dpid = entry.dpid
         if self.dpid == self.dpid:
             log.info("Current switch is destination")
@@ -66,10 +87,9 @@ class Controller(object):
             self.send_packet()
 
     def flood(self):
-        if self.arp_packet is None:
-            dpid = dpidToStr(self.event.connection.dpid)
-            dst = str(self.eth_packet.dst)
-            log.info("Flooding packet in switch: " + dpid + " --- dst=" + dst)
+        dpid = dpidToStr(self.dpid)
+        dst = str(self.eth_packet.dst)
+        log.info("Flooding packet in switch: " + dpid + " --- dst=" + dst)
         msg = of.ofp_packet_out()
         msg.actions.append(of.ofp_action_output(port=of.OFPP_FLOOD))
         msg.data = self.event.ofp
@@ -83,15 +103,10 @@ class Controller(object):
         self.icmp_packet = self.packet.find(pkt.icmp)
         self.tcp_packet = self.packet.find(pkt.tcp)
         self.udp_packet = self.packet.find(pkt.udp)
-
-        is_arp = self.arp_packet is None
-        is_eth = self.eth_packet is None
-        is_ip = self.ip_packet is None
-        if is_arp or is_eth or is_ip:
-            return True
-        if self.tcp_packet is None or self.udp_packet is None:
-            return True
-        return False
+        if [self.icmp_packet, self.tcp_packet, self.udp_packet] == [None]*3:
+            log.warning("icmp, tcp and udp packets are None!")
+            return False
+        return True
 
     def save_packet(self, packet, msg):
         if self.tcp_packet is None:
