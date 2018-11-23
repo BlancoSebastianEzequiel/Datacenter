@@ -5,8 +5,8 @@ from time import time
 
 UDP_PROTOCOL = pkt.ipv4.UDP_PROTOCOL
 IP_TYPE = pkt.ethernet.IP_TYPE
-
 log = core.getLogger()
+
 
 class Firewall(object):
     def __init__(self):
@@ -18,7 +18,8 @@ class Firewall(object):
         self.blocked_udp_packets = {}
         self.dst_ip = None
         core.openflow.addListeners(self)
-        core.openflow.addListenerByName("FlowStatsReceived", self.handle_denial_of_service)
+        core.openflow.addListenerByName(
+            "FlowStatsReceived", self.handle_denial_of_service)
 
     def handle_denial_of_service(self, event):
         for flow in event.stats:
@@ -69,7 +70,8 @@ class Firewall(object):
         msg.match.nw_dst = dst_ip
         self.send_message_to_all(msg)
 
-    def send_message_to_all(self, msg):
+    @staticmethod
+    def send_message_to_all(msg):
         for a_connection in core.openflow.connections:
             a_connection.send(msg)
 
