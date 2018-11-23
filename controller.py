@@ -64,11 +64,9 @@ class Controller(object):
             return
         entry = None
         while entry is None:
-            self.flood()
-            log.info("finding dst entry")
             entry = self.host_tracker.getMacEntry(self.eth_packet.dst)
+            self.flood()
 
-        self.print_msg("AFTER ENTRY")
         self.dst_dpid = entry.dpid
         if self.dpid == self.dpid:
             log.info("Current switch is destination")
