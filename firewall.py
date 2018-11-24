@@ -21,7 +21,15 @@ class Firewall(object):
         core.openflow.addListenerByName(
             "FlowStatsReceived", self.handle_denial_of_service)
 
+    @staticmethod
+    def print_msg(msg):
+        print "++++++++++++++++++++++++++++++++++++++++++"
+        print msg
+        print "++++++++++++++++++++++++++++++++++++++++++"
+
     def handle_denial_of_service(self, event):
+        self.print_msg("HERE")
+        log.info("handle denial of service")
         for flow in event.stats:
             self.dst_ip = flow.match.nw_dst
             self.get_udp_flow(flow)
