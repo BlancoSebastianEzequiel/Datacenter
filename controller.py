@@ -1,6 +1,9 @@
 from pox.core import core
 import pox.openflow.libopenflow_01 as of
+from pox.lib.packet.ethernet import ethernet, ETHER_BROADCAST
 from pox.lib.util import dpidToStr
+from pox.lib.packet.packet_utils import _ethtype_to_str
+import pox.host_tracker
 import pox.lib.packet as pkt
 from pox.lib.revent import *
 
@@ -32,10 +35,10 @@ class Controller(object):
 
     def _handle_ConnectionUp(self, event):
         log.debug("Connection %s" % (event.connection,))
-        self.print_msg("EVENT: %s" % event.connection.__class__.__name__)
+        # self.print_msg("EVENT: %s" % event.connection.__class__.__name__)
 
         msg = of.ofp_flow_mod()
-        msg.match.dl_dst = pkt.ETHER_BROADCAST
+        msg.match.dl_dst = ETHER_BROADCAST
         msg.actions.append(of.ofp_action_output(port=of.OFPP_FLOOD))
         event.connection.send(msg)
 
@@ -54,16 +57,31 @@ class Controller(object):
         print msg
         print "++++++++++++++++++++++++++++++++++++++++++"
 
+    def fill_arp_table(self):
+        entry = core.host_tracker.getMacEntry(self.addr_dst)
+        if entry is None:
+            log.info("HOST TRACKER COULD NOT FIND ENTRY DST")
+            return
+        self.arp_table[self.addr_dst] = {
+            "dpid": entry.dpid,
+            "port": entry.port
+        }
+
     def _handle_PacketIn(self, event):
         self.event = event
         self.dpid = event.connection.dpid
+        log.info("-----------------------------------------------------------")
+        log.info("SWITCH %s" % self.dpid)
         self.in_port = event.port
         self.packet = event.parsed
         if not self.packet.parsed:
-            log.warning(
-                "%i %i ignoring unparsed packet" % (self.dpid, self.in_port))
+            log.warning("%i %i ignoring unparsed packet" %
+                        (self.dpid, self.in_port))
             return
+        log.info("HOST DST: %s" % self.packet.dst)
         self.eth_packet = self.packet.find(pkt.ethernet)
+        self.addr_dst = self.eth_packet.dst
+        self.fill_arp_table()
         self.ip_packet = self.packet.find(pkt.ipv4)
         self.arp_packet = self.packet.find(pkt.arp)
         self.icmp_packet = self.packet.find(pkt.icmp)
@@ -71,30 +89,32 @@ class Controller(object):
         self.udp_packet = self.packet.find(pkt.udp)
 
         if not self.validate_protocols():
+
             return
         if not self.validate_net_packets():
             return
 
-        entry = core.host_tracker.getMacEntry(self.packet.dst)
-
-        if entry is None:
+        if self.addr_dst not in self.arp_table:
             log.warning("Could not find dst")
             return self.flood()
 
-        self.dst_dpid = entry.dpid
+        entry = self.arp_table[self.addr_dst]
+        self.dst_dpid = entry["dpid"]
         if self.dpid == self.dst_dpid:
             log.info("Current switch is destination")
-            self.out_port = entry.port
+            self.out_port = entry["port"]
         else:
             if self.packet.dst.is_multicast:
                 self.print_msg("MULTICAST")
                 return self.flood()
-            log.info("Finding minimun paths")
+            log.info("Finding minimun paths from %s to %s"
+                     % (self.dpid, self.dst_dpid))
             minimun_paths = self.get_minimun_paths()
+            self.print_msg("minimun_paths: %s" % minimun_paths)
             log.info("finding out port")
             self.out_port = self.get_out_port(minimun_paths)
             if self.out_port is None:
-                log.info("could not find out port")
+                log.info("Could not find out port")
                 return
         log.info("Updating flow table")
         self.update_table()
@@ -102,10 +122,9 @@ class Controller(object):
         self.send_packet()
 
     def flood(self):
-        dpid = dpidToStr(self.dpid)
-        dst = str(self.eth_packet.dst)
-        log.info("Flooding packet in switch: " + dpid + " --- dst=" + dst)
+        log.info("FLOODING PACKET")
         msg = of.ofp_packet_out()
+        msg.buffer_id = self.event.ofp.buffer_id
         msg.actions.append(of.ofp_action_output(port=of.OFPP_FLOOD))
         msg.data = self.event.ofp
         msg.in_port = self.in_port
@@ -129,9 +148,15 @@ class Controller(object):
             return True
         else:
             log.warning("icmp, tcp and udp packets are None!")
-            return False
+            return True
 
     def validate_net_packets(self):
+        if _ethtype_to_str[self.packet.type] == "IPV6":
+            log.warning("DROP IPV6 packet")
+            return False
+        if self.packet.type == ethernet.LLDP_TYPE:
+            log.warning("LLDP is filtered")
+            return False
         if self.eth_packet is None:
             log.warning("ETHERNET packet is None!")
             return False
@@ -171,6 +196,7 @@ class Controller(object):
         msg = of.ofp_flow_mod()
         msg.match.dl_type = self.eth_packet.type
         msg = self.match_packet(msg)
+        msg.buffer_id = self.event.ofp.buffer_id
         if self.protocol != "ICMP":
             msg.match.tp_src = self.protocol_packet.srcport
             msg.match.tp_dst = self.protocol_packet.dstport
@@ -181,17 +207,18 @@ class Controller(object):
     def get_minimun_paths(self):
         begin = {"dpid": self.dpid, "port": self.in_port}
         adjacents = self.get_adjacents(self.dpid)
+        if not adjacents:
+            log.warning("NO ADJACENTS FOUND")
+            return []
         paths = [[begin, neighbour] for neighbour in adjacents]
-        paths_to_dst = []
-        while not paths_to_dst:
+        while not self.has_found_a_path(paths, self.dst_dpid):
             last_paths = paths[:]
             for path in last_paths:
                 adjacents = self.get_adjacents(path[-1]["dpid"])
                 for an_adjacent in adjacents:
                     if not self.node_belongs_path(an_adjacent, path):
                         paths.append(path + [an_adjacent])
-            paths_to_dst = self.filter_paths(paths, self.dst_dpid)
-        return paths_to_dst
+        return self.filter_paths(paths, self.dst_dpid)
 
     def node_belongs_path(self, node, path):
         dpid = node["dpid"]
@@ -234,6 +261,13 @@ class Controller(object):
                 continue
             paths_to_dst.append(path)
         return paths_to_dst
+
+    def has_found_a_path(self, paths, dpid):
+        for path in paths:
+            if path[-1]["dpid"] == dpid:
+                log.info("FOUND A PATH!")
+                return True
+        return False
 
     @staticmethod
     def get_adjacents(dpid):
