@@ -74,13 +74,17 @@ class Controller(object):
         log.info("SWITCH %s" % self.dpid)
         self.in_port = event.port
         self.packet = event.parsed
+        log.info("ports: %s" % event.connection.ports)
+        log.info("ports: %s" % event.connection.ports)
+        log.info("in port: %s" % self.in_port)
         if not self.packet.parsed:
             log.warning("%i %i ignoring unparsed packet" %
                         (self.dpid, self.in_port))
             return
+        log.info("HOST SRC %s" % self.packet.src)
         log.info("HOST DST: %s" % self.packet.dst)
         self.eth_packet = self.packet.find(pkt.ethernet)
-        self.addr_dst = self.eth_packet.dst
+        self.addr_dst = self.packet.dst
         self.fill_arp_table()
         self.ip_packet = self.packet.find(pkt.ipv4)
         self.arp_packet = self.packet.find(pkt.arp)
@@ -116,6 +120,7 @@ class Controller(object):
             if self.out_port is None:
                 log.info("Could not find out port")
                 return
+        log.info("out port: %s" % self.out_port)
         log.info("Updating flow table")
         self.update_table()
         log.info("Sending packet")
@@ -148,7 +153,7 @@ class Controller(object):
             return True
         else:
             log.warning("icmp, tcp and udp packets are None!")
-            return True
+            return False
 
     def validate_net_packets(self):
         if _ethtype_to_str[self.packet.type] == "IPV6":
@@ -234,7 +239,7 @@ class Controller(object):
         return self.get_port_applying_ecmp(self.get_all_ports(paths_to_dst))
 
     def get_port_applying_ecmp(self, ports):
-        key = (self.dpid, self.dst_dpid, self.protocol)
+        key = (self.dpid, self.dst_dpid)
         if key not in self.table:
             self.table[key] = ports[0]
             return ports[0]  # random
@@ -246,12 +251,12 @@ class Controller(object):
     def balance_of_charges(self):
         log.info("saving (%s, %s, %s): %s" %
                  (self.dpid, self.dst_dpid, self.protocol, self.out_port))
-        key = (self.dpid, self.dst_dpid, self.protocol)
+        key = (self.dpid, self.dst_dpid)
         self.table[key] = self.out_port
 
     @staticmethod
     def get_all_ports(paths_to_dst):
-        return [a_path[0]["port"] for a_path in paths_to_dst]
+        return [a_path[1]["port"] for a_path in paths_to_dst]
 
     @staticmethod
     def filter_paths(paths, dpid):
@@ -276,13 +281,14 @@ class Controller(object):
             if an_adjacent.dpid1 == dpid:
                 adjacents.append({
                     "dpid": an_adjacent.dpid2,
-                    "port": an_adjacent.port2
+                    "port": an_adjacent.port1
                 })
             elif an_adjacent.dpid2 == dpid:
                 adjacents.append({
                     "dpid": an_adjacent.dpid1,
-                    "port": an_adjacent.port1
+                    "port": an_adjacent.port2
                 })
+        log.info("adjacents: %s" % adjacents)
         return adjacents
 
     def send_packet(self):
