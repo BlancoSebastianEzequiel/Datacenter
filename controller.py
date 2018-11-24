@@ -70,7 +70,7 @@ class Controller(object):
     def _handle_PacketIn(self, event):
         self.event = event
         self.dpid = event.connection.dpid
-        log.info("-----------------------------------------------------------")
+        log.info("--------------------------------------------------------")
         log.info("SWITCH %s" % self.dpid)
         self.in_port = event.port
         self.packet = event.parsed
@@ -289,5 +289,6 @@ class Controller(object):
         msg = of.ofp_packet_out()
         msg.actions.append(of.ofp_action_output(port=self.out_port))
         msg.data = self.event.ofp
+        msg.buffer_id = self.event.ofp.buffer_id
         msg.in_port = self.in_port
         self.event.connection.send(msg)
