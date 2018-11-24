@@ -1,4 +1,4 @@
-def launch ():
+def launch():
     import pox.log.color
     pox.log.color.launch()
     import pox.log
@@ -8,8 +8,9 @@ def launch ():
     import pox.openflow.discovery
     pox.openflow.discovery.launch()
     core.getLogger("openflow.spanning_tree").setLevel("INFO")
-    import controller
-    controller.launch()
+    from controller import Controller
+    core.registerNew(Controller)
     import pox.openflow.spanning_tree
     pox.openflow.spanning_tree.launch()
-
+    import pox.host_tracker
+    pox.host_tracker.launch()
