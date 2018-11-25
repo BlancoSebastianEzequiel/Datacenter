@@ -20,6 +20,7 @@ class Firewall(object):
         core.openflow.addListeners(self)
         core.openflow.addListenerByName(
             "FlowStatsReceived", self.handle_denial_of_service)
+        log.info("init FIREWALL")
 
     @staticmethod
     def print_msg(msg):
