@@ -12,12 +12,15 @@ log = core.getLogger()
 
 class Controller(object):
 
-    def __init__(self):
+    def __init__(self, host_tracker):
         core.openflow.addListeners(self)
+
         def startup():
             core.openflow.addListeners(self, priority=0)
             core.openflow_discovery.addListeners(self)
+
         core.call_when_ready(startup, ('openflow', 'openflow_discovery'))
+
         self.event = None
         self.dpid = None
         self.in_port = None
@@ -37,6 +40,10 @@ class Controller(object):
         self.arp_table = {}
         self.is_ip = True
         self.adjacency = {}
+        if host_tracker is None:
+            log.warning("host_tracker is None")
+        self.host_tracker = host_tracker
+        log.info("init CONTROLLER")
 
     def add_adjacency(self, dpid1, port1, dpid2, port2):
         if dpid1 not in self.adjacency:
@@ -94,7 +101,7 @@ class Controller(object):
         print "++++++++++++++++++++++++++++++++++++++++++"
 
     def fill_arp_table(self):
-        entry = core.host_tracker.getMacEntry(self.addr_dst)
+        entry = self.host_tracker.getMacEntry(self.addr_dst)
         if entry is None:
             log.info("HOST TRACKER COULD NOT FIND ENTRY DST")
             return
@@ -298,7 +305,7 @@ class Controller(object):
         return self.get_port_applying_ecmp(self.get_all_ports(paths_to_dst))
 
     def get_port_applying_ecmp(self, ports):
-        key = (self.dpid, self.dst_dpid)
+        key = (self.dpid, self.dst_dpid, self.protocol)
         if key not in self.table:
             self.table[key] = ports[0]
             return ports[0]  # random
@@ -310,7 +317,7 @@ class Controller(object):
     def balance_of_charges(self):
         log.info("saving (%s, %s, %s): %s" %
                  (self.dpid, self.dst_dpid, self.protocol, self.out_port))
-        key = (self.dpid, self.dst_dpid)
+        key = (self.dpid, self.dst_dpid, self.protocol)
         self.table[key] = self.out_port
 
     @staticmethod

@@ -8,11 +8,11 @@ def launch():
     import pox.openflow.discovery
     pox.openflow.discovery.launch()
     core.getLogger("openflow.spanning_tree").setLevel("INFO")
-    from controller import Controller
-    core.registerNew(Controller)
     import pox.openflow.spanning_tree
     pox.openflow.spanning_tree.launch()
-    import pox.host_tracker
-    pox.host_tracker.launch()
+    from pox.host_tracker.host_tracker import host_tracker
+    host_tracker_instance = core.registerNew(host_tracker)
+    from controller import Controller
+    core.registerNew(Controller, host_tracker_instance)
     from firewall import Firewall
     core.registerNew(Firewall)
