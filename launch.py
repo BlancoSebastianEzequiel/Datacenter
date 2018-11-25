@@ -14,3 +14,5 @@ def launch():
     pox.openflow.spanning_tree.launch()
     import pox.host_tracker
     pox.host_tracker.launch()
+    from firewall import Firewall
+    core.registerNew(Firewall)
