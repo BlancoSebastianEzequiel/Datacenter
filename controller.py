@@ -118,7 +118,6 @@ class Controller(object):
             return False
         for dpid in self.adjacency:
             size = len(self.adjacency[dpid])
-            log.info("dpid: %s - len(self.adjacency[dpid]): %s" % (dpid, size))
             if dpid in [4, 5, 6, 7] and size < 2:
                 return False
             if dpid in [2, 3] and size < 4:
@@ -280,12 +279,6 @@ class Controller(object):
             last_paths = paths[:]
             for path in last_paths:
                 adjacents = self.get_adjacents(path[-1]["dpid"])
-                log.info("a path: %s" % path)
-                log.info("adjacents of: %s" % path[-1]["dpid"])
-                log.info("in port: %s" % self.in_port)
-                log.info("SRC SWITCH: %s" % self.dpid)
-                log.info("DST SWITCH: %s" % self.dst_dpid)
-                log.info("adjacents: %s" % adjacents)
                 for an_adjacent in adjacents:
                     if an_adjacent["dpid"] != self.dpid:
                         if not self.node_belongs_path(an_adjacent, path):
