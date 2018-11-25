@@ -229,7 +229,7 @@ class Controller(object):
         dpid = node["dpid"]
         port = node["port"]
         for a_node in path:
-            if a_node["dpid"] == dpid and a_node["port"] == port:
+            if a_node["dpid"] == dpid:
                 return True
         return False
 
