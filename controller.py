@@ -3,7 +3,7 @@ import pox.openflow.libopenflow_01 as of
 from pox.lib.packet.ethernet import ethernet, ETHER_BROADCAST
 from pox.lib.util import dpidToStr
 from pox.lib.packet.packet_utils import _ethtype_to_str
-import pox.host_tracker
+from pox.host_tracker.host_tracker import host_tracker
 import pox.lib.packet as pkt
 from pox.lib.revent import *
 
@@ -14,6 +14,13 @@ class Controller(object):
 
     def __init__(self):
         core.openflow.addListeners(self)
+
+        def startup():
+            core.openflow.addListeners(self, priority=0)
+            core.openflow_discovery.addListeners(self)
+
+        core.call_when_ready(startup, ('openflow', 'openflow_discovery'))
+
         self.event = None
         self.dpid = None
         self.in_port = None
@@ -32,10 +39,44 @@ class Controller(object):
         self.protocol = None
         self.arp_table = {}
         self.is_ip = True
+        self.adjacency = {}
+        self.host_tracker = host_tracker()
+        log.info("controller ready")
+
+    def add_adjacency(self, dpid1, port1, dpid2, port2):
+        if dpid1 not in self.adjacency:
+            self.adjacency[dpid1] = {}
+        self.adjacency[dpid1][port1] = {
+                "dpid": dpid2,
+                "port": port2
+            }
+
+    def remove_adjacency(self, dpid, port):
+        if dpid not in self.adjacency:
+            return
+        if port not in self.adjacency[dpid][port]:
+            return
+        del self.adjacency[dpid][port]
+
+    def _handle_LinkEvent(self, event):
+        log.info("--------------------------------------------------")
+        link = event.link
+        if event.added:
+            self.add_adjacency(link.dpid1, link.port1, link.dpid2, link.port2)
+            self.add_adjacency(link.dpid2, link.port2, link.dpid1, link.port1)
+        elif event.removed:
+            self.remove_adjacency(link.dpid1, link.port1)
+            self.remove_adjacency(link.dpid2, link.port2)
+        log.info('link added is %s' % event.added)
+        log.info('link removed is %s' % event.removed)
+        log.info('switch1 %d' % link.dpid1)
+        log.info('port1 %d' % link.port1)
+        log.info('switch2 %d' % link.dpid2)
+        log.info('port2 %d' % link.port2)
+        log.info("--------------------------------------------------")
 
     def _handle_ConnectionUp(self, event):
         log.debug("Connection %s" % (event.connection,))
-        # self.print_msg("EVENT: %s" % event.connection.__class__.__name__)
 
         msg = of.ofp_flow_mod()
         msg.match.dl_dst = ETHER_BROADCAST
@@ -58,7 +99,7 @@ class Controller(object):
         print "++++++++++++++++++++++++++++++++++++++++++"
 
     def fill_arp_table(self):
-        entry = core.host_tracker.getMacEntry(self.addr_dst)
+        entry = self.host_tracker.getMacEntry(self.addr_dst)
         if entry is None:
             log.info("HOST TRACKER COULD NOT FIND ENTRY DST")
             return
@@ -67,10 +108,38 @@ class Controller(object):
             "port": entry.port
         }
 
+    def print_adjacents(self):
+        msg = ""
+        for dpid in self.adjacency:
+            msg += "dpid: %s: [" % dpid
+            for port in self.adjacency[dpid]:
+                msg += "%s, " % self.adjacency[dpid][port]["dpid"]
+            msg += "]"
+            log.info(msg)
+            msg = ""
+
+    def has_discovered_the_entire_topology(self):
+        if len(self.adjacency.keys()) != 7:
+            return False
+        for dpid in self.adjacency:
+            size = len(self.adjacency[dpid])
+            if dpid in [4, 5, 6, 7] and size < 2:
+                return False
+            if dpid in [2, 3] and size < 4:
+                return False
+            if dpid == 1 and size < 1:
+                return False
+        return True
+
     def _handle_PacketIn(self, event):
+        self.host_tracker._handle_PacketIn(event)
+        if not self.has_discovered_the_entire_topology():
+            log.info("Please wait... learning the topology")
+            return
         self.event = event
         self.dpid = event.connection.dpid
         log.info("--------------------------------------------------------")
+        self.print_adjacents()
         log.info("SWITCH %s" % self.dpid)
         self.in_port = event.port
         self.packet = event.parsed
@@ -114,7 +183,6 @@ class Controller(object):
             log.info("Finding minimun paths from %s to %s"
                      % (self.dpid, self.dst_dpid))
             minimun_paths = self.get_minimun_paths()
-            self.print_msg("minimun_paths: %s" % minimun_paths)
             log.info("finding out port")
             self.out_port = self.get_out_port(minimun_paths)
             if self.out_port is None:
@@ -158,9 +226,6 @@ class Controller(object):
     def validate_net_packets(self):
         if _ethtype_to_str[self.packet.type] == "IPV6":
             log.warning("DROP IPV6 packet")
-            return False
-        if self.packet.type == ethernet.LLDP_TYPE:
-            log.warning("LLDP is filtered")
             return False
         if self.eth_packet is None:
             log.warning("ETHERNET packet is None!")
@@ -210,26 +275,25 @@ class Controller(object):
         self.balance_of_charges()
 
     def get_minimun_paths(self):
-        begin = {"dpid": self.dpid, "port": self.in_port}
         adjacents = self.get_adjacents(self.dpid)
         if not adjacents:
             log.warning("NO ADJACENTS FOUND")
             return []
-        paths = [[begin, neighbour] for neighbour in adjacents]
+        paths = [[neighbour] for neighbour in adjacents]
         while not self.has_found_a_path(paths, self.dst_dpid):
             last_paths = paths[:]
             for path in last_paths:
                 adjacents = self.get_adjacents(path[-1]["dpid"])
                 for an_adjacent in adjacents:
-                    if not self.node_belongs_path(an_adjacent, path):
-                        paths.append(path + [an_adjacent])
+                    if an_adjacent["dpid"] != self.dpid:
+                        if not self.node_belongs_path(an_adjacent, path):
+                            paths.append(path + [an_adjacent])
         return self.filter_paths(paths, self.dst_dpid)
 
     def node_belongs_path(self, node, path):
         dpid = node["dpid"]
-        port = node["port"]
         for a_node in path:
-            if a_node["dpid"] == dpid and a_node["port"] == port:
+            if a_node["dpid"] == dpid:
                 return True
         return False
 
@@ -239,7 +303,7 @@ class Controller(object):
         return self.get_port_applying_ecmp(self.get_all_ports(paths_to_dst))
 
     def get_port_applying_ecmp(self, ports):
-        key = (self.dpid, self.dst_dpid)
+        key = (self.dpid, self.dst_dpid, self.protocol)
         if key not in self.table:
             self.table[key] = ports[0]
             return ports[0]  # random
@@ -251,12 +315,12 @@ class Controller(object):
     def balance_of_charges(self):
         log.info("saving (%s, %s, %s): %s" %
                  (self.dpid, self.dst_dpid, self.protocol, self.out_port))
-        key = (self.dpid, self.dst_dpid)
+        key = (self.dpid, self.dst_dpid, self.protocol)
         self.table[key] = self.out_port
 
     @staticmethod
     def get_all_ports(paths_to_dst):
-        return [a_path[1]["port"] for a_path in paths_to_dst]
+        return [a_path[0]["port"] for a_path in paths_to_dst]
 
     @staticmethod
     def filter_paths(paths, dpid):
@@ -274,8 +338,8 @@ class Controller(object):
                 return True
         return False
 
-    @staticmethod
-    def get_adjacents(dpid):
+    # @staticmethod
+    def get_adjacents_last(self, dpid):
         adjacents = []
         for an_adjacent in core.openflow_discovery.adjacency:
             if an_adjacent.dpid1 == dpid:
@@ -288,8 +352,35 @@ class Controller(object):
                     "dpid": an_adjacent.dpid1,
                     "port": an_adjacent.port2
                 })
-        log.info("adjacents: %s" % adjacents)
+        return self.filter_repeated(adjacents)
+
+    def get_adjacents(self, dpid):
+        adjacents = []
+        if dpid not in self.adjacency:
+            return adjacents
+        for port in self.adjacency[dpid]:
+            adjacents.append({
+                "dpid": self.adjacency[dpid][port]["dpid"],
+                "port": port
+            })
         return adjacents
+
+    def filter_repeated(self, adjacents):
+        filtered = []
+        belongs = False
+        for an_adjacent in adjacents:
+            for final_adjacent in filtered:
+                dpid_1 = final_adjacent["dpid"]
+                dpid_2 = an_adjacent["dpid"]
+                port_1 = final_adjacent["port"]
+                port_2 = an_adjacent["port"]
+                if dpid_1 == dpid_2 and port_1 == port_2:
+                    belongs = True
+                    break
+            if not belongs:
+                filtered.append(an_adjacent)
+                belongs = False
+        return filtered
 
     def send_packet(self):
         msg = of.ofp_packet_out()
