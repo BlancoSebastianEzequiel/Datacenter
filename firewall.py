@@ -2,6 +2,7 @@ import pox.lib.packet as pkt
 from pox.core import core
 import pox.openflow.libopenflow_01 as of
 from time import time
+from pox.lib.recoco import Timer
 from pox.lib.revent import *
 
 UDP_PROTOCOL = pkt.ipv4.UDP_PROTOCOL
@@ -15,15 +16,13 @@ class Firewall(EventMixin):
         self.MAX_UDP_TIME = 100
         self.udp_flow_packets = {}
         self.total_udp_flow_packets = {}
-        self.current_udp_flow_packets = {}
         self.blocked_udp_packets = {}
         self.dst_ip = None
-        # get stats START ---------------------------------------------------->
         core.openflow.addListenerByName(
             "FlowStatsReceived",
             self._handle_flowstats_received
         )
-        # get stats END ------------------------------------------------------>
+        Timer(5, self.request_for_switch_statistics, recurring=True)
         log.info("firewall ready")
 
     @staticmethod
@@ -32,8 +31,12 @@ class Firewall(EventMixin):
         print msg
         print "++++++++++++++++++++++++++++++++++++++++++"
 
+    def request_for_switch_statistics(self):
+        for connection in core.openflow.connections:
+            body = of.ofp_flow_stats_request()
+            connection.send(of.ofp_stats_request(body=body))
+
     def _handle_flowstats_received(self, event):
-        self.print_msg("HERE")
         log.info("handle denial of service")
         for flow in event.stats:
             self.dst_ip = flow.match.nw_dst
@@ -41,7 +44,7 @@ class Firewall(EventMixin):
             self.evaluate_blocking()
 
     def get_udp_flow(self, flow):
-        if self.dst_ip is not None and flow.match.nw_proto != UDP_PROTOCOL:
+        if self.dst_ip is None or flow.match.nw_proto != UDP_PROTOCOL:
             return
         if self.dst_ip not in self.udp_flow_packets:
             self.total_udp_flow_packets[self.dst_ip] = flow.packet_count
@@ -51,7 +54,6 @@ class Firewall(EventMixin):
     def evaluate_blocking(self):
         for dst_ip in self.total_udp_flow_packets:
             total = self.total_udp_flow_packets[dst_ip]
-            self.current_udp_flow_packets[dst_ip] = total
             last = self.udp_flow_packets[dst_ip]
             if (total - last) > self.MAX_UDP_PACKETS:
                 self.block_udp_packet(dst_ip)
