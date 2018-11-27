@@ -2,13 +2,14 @@ import pox.lib.packet as pkt
 from pox.core import core
 import pox.openflow.libopenflow_01 as of
 from time import time
+from pox.lib.revent import *
 
 UDP_PROTOCOL = pkt.ipv4.UDP_PROTOCOL
 IP_TYPE = pkt.ethernet.IP_TYPE
 log = core.getLogger()
 
 
-class Firewall(object):
+class Firewall(EventMixin):
     def __init__(self):
         self.MAX_UDP_PACKETS = 100
         self.MAX_UDP_TIME = 100
@@ -17,10 +18,13 @@ class Firewall(object):
         self.current_udp_flow_packets = {}
         self.blocked_udp_packets = {}
         self.dst_ip = None
-        core.openflow.addListeners(self)
+        # get stats START ---------------------------------------------------->
         core.openflow.addListenerByName(
-            "FlowStatsReceived", self.handle_denial_of_service)
-        log.info("init FIREWALL")
+            "FlowStatsReceived",
+            self._handle_flowstats_received
+        )
+        # get stats END ------------------------------------------------------>
+        log.info("firewall ready")
 
     @staticmethod
     def print_msg(msg):
@@ -28,7 +32,7 @@ class Firewall(object):
         print msg
         print "++++++++++++++++++++++++++++++++++++++++++"
 
-    def handle_denial_of_service(self, event):
+    def _handle_flowstats_received(self, event):
         self.print_msg("HERE")
         log.info("handle denial of service")
         for flow in event.stats:
@@ -83,7 +87,3 @@ class Firewall(object):
     def send_message_to_all(msg):
         for a_connection in core.openflow.connections:
             a_connection.send(msg)
-
-
-def launch():
-    core.registerNew(Firewall)
