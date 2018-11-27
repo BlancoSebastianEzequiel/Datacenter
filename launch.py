@@ -10,9 +10,7 @@ def launch():
     core.getLogger("openflow.spanning_tree").setLevel("INFO")
     import pox.openflow.spanning_tree
     pox.openflow.spanning_tree.launch()
-    from pox.host_tracker.host_tracker import host_tracker
-    host_tracker_instance = core.registerNew(host_tracker)
     from controller import Controller
-    core.registerNew(Controller, host_tracker_instance)
+    core.registerNew(Controller)
     from firewall import Firewall
     core.registerNew(Firewall)

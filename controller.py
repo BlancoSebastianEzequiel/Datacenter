@@ -3,7 +3,7 @@ import pox.openflow.libopenflow_01 as of
 from pox.lib.packet.ethernet import ethernet, ETHER_BROADCAST
 from pox.lib.util import dpidToStr
 from pox.lib.packet.packet_utils import _ethtype_to_str
-import pox.host_tracker
+from pox.host_tracker.host_tracker import host_tracker
 import pox.lib.packet as pkt
 from pox.lib.revent import *
 
@@ -12,7 +12,7 @@ log = core.getLogger()
 
 class Controller(object):
 
-    def __init__(self, host_tracker):
+    def __init__(self):
         core.openflow.addListeners(self)
 
         def startup():
@@ -40,10 +40,8 @@ class Controller(object):
         self.arp_table = {}
         self.is_ip = True
         self.adjacency = {}
-        if host_tracker is None:
-            log.warning("host_tracker is None")
-        self.host_tracker = host_tracker
-        log.info("init CONTROLLER")
+        self.host_tracker = host_tracker()
+        log.info("controller ready")
 
     def add_adjacency(self, dpid1, port1, dpid2, port2):
         if dpid1 not in self.adjacency:
@@ -134,8 +132,9 @@ class Controller(object):
         return True
 
     def _handle_PacketIn(self, event):
+        self.host_tracker._handle_PacketIn(event)
         if not self.has_discovered_the_entire_topology():
-            log.info("the topology is not complete")
+            log.info("Please wait... learning the topology")
             return
         self.event = event
         self.dpid = event.connection.dpid
@@ -184,7 +183,6 @@ class Controller(object):
             log.info("Finding minimun paths from %s to %s"
                      % (self.dpid, self.dst_dpid))
             minimun_paths = self.get_minimun_paths()
-            self.print_msg("minimun_paths: %s" % minimun_paths)
             log.info("finding out port")
             self.out_port = self.get_out_port(minimun_paths)
             if self.out_port is None:
