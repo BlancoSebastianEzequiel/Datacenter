@@ -6,6 +6,7 @@ from pox.lib.packet.packet_utils import _ethtype_to_str
 from pox.host_tracker.host_tracker import host_tracker
 import pox.lib.packet as pkt
 from pox.lib.revent import *
+from ecmp_table import ECMPTable
 
 log = core.getLogger()
 
@@ -27,7 +28,7 @@ class Controller(object):
         self.packet = None
         self.dst_dpid = None
         self.out_port = None
-        self.table = {}
+        self.table = ECMPTable()
         self.eth_packet = None
         self.ip_packet = None
         self.arp_packet = None
@@ -300,23 +301,29 @@ class Controller(object):
     def get_out_port(self, paths_to_dst):
         if len(paths_to_dst) == 0:
             return None
-        return self.get_port_applying_ecmp(self.get_all_ports(paths_to_dst))
-
-    def get_port_applying_ecmp(self, ports):
-        key = (self.dpid, self.dst_dpid, self.protocol)
-        if key not in self.table:
-            self.table[key] = ports[0]
-            return ports[0]  # random
-        for port in ports:
-            if self.table[key] == port:
-                return port
-        return ports[0]  # random
+        ports = self.get_all_ports(paths_to_dst)
+        data = (
+            ports,
+            self.dpid,
+            self.dst_dpid,
+            self.protocol,
+            self.packet.src,
+            self.packet.dst
+        )
+        return self.table.get_port_applying_ecmp(data)
 
     def balance_of_charges(self):
         log.info("saving (%s, %s, %s): %s" %
                  (self.dpid, self.dst_dpid, self.protocol, self.out_port))
-        key = (self.dpid, self.dst_dpid, self.protocol)
-        self.table[key] = self.out_port
+        data = (
+            self.dpid,
+            self.dst_dpid,
+            self.protocol,
+            self.packet.src,
+            self.packet.dst,
+            self.out_port
+        )
+        self.table.save_port(data)
 
     @staticmethod
     def get_all_ports(paths_to_dst):
