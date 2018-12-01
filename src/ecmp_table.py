@@ -13,7 +13,6 @@ class ECMPTable(object):
             self.table[dpid] = {}
             random.shuffle(ports)
             self.table[dpid][key] = ports[0]
-            self.table[dpid][key] = ports[0]
             return self.table[dpid][key]
         elif key not in self.table[dpid]:
             is_used = False
@@ -26,10 +25,11 @@ class ECMPTable(object):
                     return a_port
             random.shuffle(ports)
             self.table[dpid][key] = ports[0]
-            return ports[0]
+            return self.table[dpid][key]
         return self.table[dpid][key]
 
     def save_port(self, data):
         (dpid, dst_dpid, protocol, src_addr, dst_addr, port) = data
         key = (dst_dpid, protocol, src_addr, dst_addr)
+        self.table[dpid] = {}
         self.table[dpid][key] = port
