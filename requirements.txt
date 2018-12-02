@@ -1,0 +1,5 @@
+git+https://github.com/mininet/mininet.git
+pox>=0.2.4
+pandas
+numpy>=1.15.4
+pytest
