@@ -50,6 +50,7 @@ class Firewall(EventMixin):
                 continue
             self.evaluate_blocking()
             current = self.total_udp_flow_packets[self.dst_ip]
+            self.last_udp_flow_packets[self.dpid] = {}
             self.last_udp_flow_packets[self.dpid][self.dst_ip] = current
 
     def get_udp_flow(self, flow):
@@ -73,7 +74,7 @@ class Firewall(EventMixin):
     def evaluate_blocking(self):
         for dst_ip in self.total_udp_flow_packets:
             current = self.total_udp_flow_packets[dst_ip]
-            last = self.get_last_udp_flow_packets(dst_ip)
+            last = self.last_udp_flow_packets.get(self.dpid, {}).get(dst_ip, 0)
             if (current - last) > self.MAX_UDP_PACKETS:
                 self.block_udp_packet(dst_ip)
             else:
@@ -81,9 +82,7 @@ class Firewall(EventMixin):
 
     def block_udp_packet(self, dst_ip):
         log.info("BLOCKING UDP PACKET IN %s" % dst_ip)
-        if self.dpid not in self.blocked_udp_packets:
-            self.blocked_udp_packets[self.dpid] = {}
-        if dst_ip not in self.blocked_udp_packets[self.dpid]:
+        if dst_ip not in self.blocked_udp_packets:
             log.info("Blocking ip: %s" % dst_ip)
             msg = of.ofp_flow_mod()
             msg.match.nw_proto = UDP_PROTOCOL
@@ -91,16 +90,15 @@ class Firewall(EventMixin):
             msg.priority = of.OFP_DEFAULT_PRIORITY + 1
             msg.match.nw_dst = dst_ip
             self.send_message_to_all(msg)
-        self.blocked_udp_packets[self.dpid][dst_ip] = time()
+            self.blocked_udp_packets[dst_ip] = time()
 
     def unblock_udp_packet(self, dst_ip):
-        if self.dpid not in self.blocked_udp_packets:
-            self.blocked_udp_packets[self.dpid] = {}
-        if dst_ip not in self.blocked_udp_packets[self.dpid]:
+        if dst_ip not in self.blocked_udp_packets:
             return
-        time_passed = time() - self.blocked_udp_packets[self.dpid][dst_ip]
+        time_passed = time() - self.blocked_udp_packets[dst_ip]
         if time_passed < self.MAX_UDP_TIME:
             return
+        del self.blocked_udp_packets[dst_ip]
         log.info("UNBLOCKING UDP PACKET IN %s" % dst_ip)
         log.info("unblocking ip: %s" % dst_ip)
         msg = of.ofp_flow_mod()
@@ -113,5 +111,4 @@ class Firewall(EventMixin):
     @staticmethod
     def send_message_to_all(msg):
         for a_connection in core.openflow.connections:
-            log.info("SWITCH %s" % a_connection.dpid)
             a_connection.send(msg)
