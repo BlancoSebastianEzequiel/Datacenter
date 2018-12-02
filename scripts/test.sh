@@ -1,4 +1,8 @@
 #!/usr/bin/env sh
-unzip wireshark/wireshark.zip -d wireshark
+if [ -f wireshark/wireshark.zip ]; then
+    unzip wireshark/wireshark.zip -d wireshark
+fi
 python -m pytest test/test*.py
-rm wireshark/wireshark.zip
+if [ -f wireshark/wireshark.zip ]; then
+    rm wireshark/wireshark.zip
+fi
