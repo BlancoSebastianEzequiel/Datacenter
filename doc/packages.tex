@@ -13,19 +13,22 @@
 \usepackage{alltt}
 \usepackage[section]{placeins}
 \usepackage{tocloft}
-\renewcommand{\cftsecleader}{\cftdotfill{\cftdotsep}}  % lineas punteadas en la tabla de contenidos
-%\newcommand\mydotfill{\cftdotfill{\cftdotsep}}
-
+\usepackage{hyperref}
 \usepackage[textwidth=420pt,textheight=630pt]{geometry}
-\setlength{\oddsidemargin}{15.5pt}
-%\usepackage[none]{hyphenat} %no cortar palabras
-
 \usepackage[spanish, activeacute]{babel} %Definir idioma español
 \usepackage[utf8]{inputenc} %Codificacion utf-8
+\usepackage{listings}
+\hypersetup{
+    colorlinks,
+    citecolor=black,
+    filecolor=black,
+    linkcolor=black,
+    urlcolor=blue
+}
+\renewcommand{\cftsecleader}{\cftdotfill{\cftdotsep}}  % lineas punteadas en la tabla de contenidos
+\setlength{\oddsidemargin}{15.5pt}
 \backgroundsetup{contents={}} %Saca el 'draft'
 \definecolor{mygray}{rgb}{0.95,0.95,0.95}
-
-\usepackage{listings}
 \lstset{
     basicstyle=\footnotesize,
     backgroundcolor=\color{mygray},         
@@ -42,7 +45,6 @@
     tabsize=4,
     language=C,
     frame=none,
-	title=\lstname,
+    title=\lstname,
 }
-
 \def\labelitemi{$\bullet$}
