@@ -1,0 +1,20 @@
+\begin{itemize}
+	\item \underline{\textbf{SDN:}}\\
+		Software Defined Networking es un paradigma que puede considerarse reciente en el cual los dispositivos intermediarios 			encargados de conmutar paquetes son configurados por una entidad controladora por medio de software. Decimos dispositivos 			intermediarios porque este nuevo paradigma permite una configuración tan flexible que se pierde la distinción entre switches, 			routers, NATs; ahora cada dispositivo se configura según las necesidades particulares de la red en la que habita.
+
+	\item \underline{\textbf{OpenFlow:}}\\
+		Es la herramienta que se utiliza para implementar esta nueva tecnología, mejor dicho es el protocolo por el cual se configuran 			los dispositivos intermediarios. La idea principal es reemplazar las tablas de ruteo de los routers y las tablas de direcciones 		Mac en los switches por tablas de flujo. Entonces un dispositivo OpenFlow decide qué hacer con los paquetes que le llegan en 			base a la tabla de flujo, por otro lado se configuran las políticas y el comportamiento que debe adoptar mediante el protocolo 			OpenFlow.
+
+	\item \underline{\textbf{Control y Forwarding path:}}\\
+		Un dispositivo de internet por definición debe funcionar con la mayor velocidad posible, por ello su funcionamiento está 			implementado por hardware y el costo de implementarlo exclusivamente por software en cuanto a velocidad sería muy elevado. Es 			por eso que los dispositivos OpenFlow se dividen en 2 planos: el plano de datos o forwarding (hardware) y el plano de control 			(software), este último es el que se comunica por medio de OpenFlow con la entidad controladora que indicará cómo deberá ser 			administrado el dispositivo. El plano de datos hará lo que sea necesario con cada paquete según la tabla de flujos mientras que 		el plano de control gestionará las decisiones a tomar sobre la construcción de la tabla, modificación de algún parámetro de la 			cabecera (por ejemplo al implementar Network Address Translation) y políticas de seguridad, entre otras funcionalidades.
+
+	\item \underline{\textbf{Concepto de flujo:}}\\
+		No existe una definición per se de lo que es un flujo pero lo entendemos como el conjunto de paquetes que esperamos que llegue 			de un mismo origen a un mismo destino (por destino y origen nos referimos a nivel enlace/red/transporte) con similar latencia y 		por el mismo camino. Un ejemplo podría ser la respuesta de un http get, todos los paquetes de la respuesta provienen del mismo 			origen, van hacia el mismo destino y se espera que lleguen medianamente uno detrás del otro (suponiendo no haya pérdidas). Para 		lo que es un dispositivo OpenFlow un flujo se define como la 10-tupla formada por (PortIn, VLANID, srcEth, dstEth, typeEth, 			srcIP, dstIP, protoIP, srcport, dstport) y es sobre estos campos que se definen las entradas en la tabla de flujos, luego 			podrán utilizarse los campos que sean necesarios según las políticas adoptadas por el plano de control.
+
+	\item \underline{\textbf{IP blackholing:}}\\
+		Es la decisión que se toma de descartar paquetes provenientes de una determinada dirección IP al detectar un ataque, los 			dispositivos OpenFlow permiten introducir políticas sobre lo que debe ser considerado como un ataque y en qué casos hacer IP 			blackholing de manera flexible y que se adapte a la sensibilidad de la red en la que está funcionando.
+
+	\item \underline{\textbf{Firewall:}}\\
+		Es un mecanismo de seguridad cuya función es proteger la red interna frente amenazas de redes no confiables, para ello puede 			filtrar o redireccionar los paquetes que se consideran como no permitidos según ciertas reglas de seguridad. Por ejemplo si no 			queremos contestar paquetes ICMP podemos configurar para que todos los paquetes de ese protocolo sean descartados. Devuelta lo 			que permite OpenFlow es adaptar el firewall del dispositivo según las necesidades particulares de la red.
+\end{itemize}
+
