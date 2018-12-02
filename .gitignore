@@ -1,3 +1,9 @@
 .idea
 .python-version
 frenetic-uservm-x86_64-20160610.ova
+.pytest_cache
+test/__pycache__
+test/*.txt
+test/*.pyc
+ej
+*.png
