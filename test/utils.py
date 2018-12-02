@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import os
 
 np.warnings.filterwarnings('ignore')
 
@@ -14,6 +15,12 @@ def filter_ip(df, ip, ip_src_col, ip_dst_col):
 
 def filter_by(df, values, callback):
     return df[df[values].apply(lambda x: callback(x), axis=1)]
+
+
+def get_output(input_file_name, output_file_name):
+    cmd = "tshark -T fields -E header=y -e ip.src -e ip.dst " \
+          "-e _ws.col.Protocol -r " + input_file_name + " > " + output_file_name
+    os.system(cmd)
 
 
 def rtt_field_to_float(x, rtt_col):
