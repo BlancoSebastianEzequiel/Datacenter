@@ -345,22 +345,6 @@ class Controller(object):
                 return True
         return False
 
-    # @staticmethod
-    def get_adjacents_last(self, dpid):
-        adjacents = []
-        for an_adjacent in core.openflow_discovery.adjacency:
-            if an_adjacent.dpid1 == dpid:
-                adjacents.append({
-                    "dpid": an_adjacent.dpid2,
-                    "port": an_adjacent.port1
-                })
-            elif an_adjacent.dpid2 == dpid:
-                adjacents.append({
-                    "dpid": an_adjacent.dpid1,
-                    "port": an_adjacent.port2
-                })
-        return self.filter_repeated(adjacents)
-
     def get_adjacents(self, dpid):
         adjacents = []
         if dpid not in self.adjacency:
