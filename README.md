@@ -3,4 +3,5 @@
 
 ## Docs
 
-Ver [Wiki](https://github.com/BlancoSebastianEzequiel/Datacenter/wiki)
+Ver [Wiki](https://github.com/BlancoSebastianEzequiel/Datacenter/wiki)  
+Ver [Informe](https://github.com/BlancoSebastianEzequiel/Datacenter/blob/5-report/doc/report.pdf)
