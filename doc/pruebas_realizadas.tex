@@ -71,7 +71,6 @@
 		\end{adjustbox}
 	\end{figure}
 	\FloatBarrier
-	Podemos comprobar que cumple con el balanceo de cargas ya que los paquetes solo viajan por el switch 2. Esto es asi, porque ir por 		cualquiera de los swtich es lo mismo respecto a llegar a desrino y a cuanto pesa el mismo, es decir, tenemos un empate y vemos que el 		controlador decidio que de acuerdo a este flujo se elija solo el switch 2:\\
 	\begin{figure}[ht]
 		\begin{adjustbox}{addcode={
 			\begin{minipage}{\width}}{
@@ -94,6 +93,7 @@
 		\end{adjustbox}
 	\end{figure}
 	\FloatBarrier
+	Podemos comprobar que cumple con el balanceo de cargas ya que los paquetes solo viajan por el switch 2. Esto es asi, porque ir por 		cualquiera de los swtich es lo mismo respecto a llegar a destino y a cuanto pesa el mismo, es decir, tenemos un empate y vemos que el 		controlador decidio que de acuerdo a este flujo se elija solo el switch 2:\\
 
 \subsection{Balanceo de cargas con ping}
 	Para realizar esta prueba vamos a usar miniet haciendo un ping entre h1 y h5, y otro ping entre h2 y h5. De esta manera podremos ver 		que lo que deberia pasar es que un flujo deberia elegir el switch 2 o 3 y el otro flujo tambien sin que ambos elijan el mismo flujo. 		Los paquetes que se envian contienen un protocolo ICMP, por lo tanto haremos un monitoreo en la interfaces s3-eth1 y s2-eth1 para 		verificar que cuando hacemos el ping ehtre h1 y h5 una de ellas esta vacia y la otra recibe los paquetes, pero al hacer el ping entre 		h2 y h5 debemos poder ver los mismo pero en los switches invertidos.\\
