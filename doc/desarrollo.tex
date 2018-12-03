@@ -1,9 +1,31 @@
 \subsection{Preguntas}	
 	\begin{enumerate}
 		\item ¿Cuál es la diferencia entre un Switch y un router? ¿Qué tienen en común?
+			\underline{\textbf{Diferencias:}}
+				\begin{itemize}
+					\item Direccionamiento dentro de la misma red
+					\item Confección de la tabla de ruteo
+						\begin{itemize}
+							\item Los switches aprenden a partir de la direccion origen
+							\item Los routers aprenden a partir de la direccion destino
+						\end{itemize}
+					\item Metodología de ruteo (broadcast en SW)
+					\item Configuración (plug-n-play vs DFGW)
+					\item El router es el dispositivo que se encarga de reenviar los paquetes entre distintas redes
+					\item El router es mas "inteligente" que el switch, ya que además de cumplir con la misma función, 						tiene además la capacidad de escoger la mejor ruta para que un determinado paquete de datos llegue a su 					destino
+					\item Los routers son capaces de interconectar varias redes y generalmente trabajan en conjunto con 						hubs y switchs.
+				\end{itemize}
+			\underline{\textbf{Similitudes:}}
+				\begin{itemize}
+					\item Ambos envían información en elementos discretos (tramas vs datagramas)
+					\item Ambos tienen una tabla para decidir como enviar los paquetes
+				\end{itemize}
 		\item ¿Cuál es la diferencia entre un Switch convencional y un Switch OpenFlow?
-		\item ¿Se pueden reemplazar todos los routers de la Intenet por Swithces OpenFlow?\\
-		Piense en el escenario interASes para elaborar su respuesta
+			Un switch normal funciona independientemente del resto de la red.
+
+			Un switch OpenFlow, cuando recibe un paquete, para el cual no tiene un flujo de salida, es decir, que en la tabla del 				switch no tiene un match respecto de la direccion de entrada, se pondrá en contacto con un controlador y le preguntará 				qué debe hacer con este paquete. Luego, el controlador puede actualizar la tabla del switch, posiblemente incluyendo 				alguna manipulación de paquetes. Una vez que el flujo se descarga al conmutador, cambiará los paquetes similares a 				velocidad de cable.
+		\item ¿Se pueden reemplazar todos los routers de la Intenet por Swithces OpenFlow?(Piense en el escenario interASes para 			elaborar su respuesta)\\
+			Si pensamos en router normales se podrian cambiar facilmente, pero habria que tener en cuenta que debe haber varios 				controladores como servidores, porque si todos acceden al mismo controlador, este mismo colapsaria y no podri atender a 			todos los pedidos al mismo tiempo (siedo que estamos remplazando muchos router de toda la internet). Si pensamos en los 			sistemas autonomos, tenemos los routers de borde que tiene una caracteristica en particular, y esta es que manejan un 				protocolo llamado BGP, donde en este se puede decidir que prefijos se dan a conocer, se elojen los protocolos de ruteo, 			se determina la ingenieria de trafico y demas caracteristicas. Por lo tanto habria que tener un controlador especial 				para estos donde se pueda manejar la logica del mismo y que ademas sean configurables ya que sabemos que la 				discrecionalidad de los prefijos se da por acuerdo comerciales, entonces, frente a cambios en estos acuerdos, se debe 				poder cambiar dicha discrecionalidad de una manera efectiva en el controlador de manera tal que sea flexible frente a 				cambios. Esto haria que sea mas facil la configuracion.
 	\end{enumerate}
 
 \subsection{Maquina virtual}
