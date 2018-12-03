@@ -2,11 +2,11 @@
 	Para poder correr el controlador y la topologia debemos abrir la maquina virtual. Luego abrir dos terminales como se explico en la 		seccion de maquina virual en desarrollo. Pra resumirlo en pasos, debemos:
 	\begin{enumerate}
 		\item Pararse en la raiz del repositorio
-		\item abrir una terminal y ejecutar: $sh \; scripts/resync.sh$
-		\item Luego, en la misma terminal ejecutar: $sh scripts/conect\_to\_VM.sh$. Nos pedira nuestra contraseña y la contraseña de la 		VM que es: $frenetic$
-		\item Correr el controlador ejecutando: $pox/pox.py \; launch$
+		\item abrir una terminal y ejecutar: \lstinline[columns=fixed]{sh scripts/resync.sh} y cerra terminal
+		\item Luego, abrir una terminal ejecutar: \lstinline[columns=fixed]{sh scripts/conect_to_VM.sh}. Nos pedira nuestra 			contraseña y la contraseña de la VM que es: \lstinline[columns=fixed]{frenetic}
+		\item Correr el controlador ejecutando: \lstinline[columns=fixed]{pox/pox.py launch}
 		\item Repetir el paso 3 en otra terminal.
-		\item Levantar la topologia ejecutando: $sh \; Datacenter/scripts/lift\_topology.sh$
+		\item Levantar la topologia ejecutando: \lstinline[columns=fixed]{sh Datacenter/scripts/lift_topology.sh}
 	\end{enumerate} 
 \subsection{Pingall}
 	Una vez que levantamos primero el controlador y luego la topologia, los sitches tienen su tabla vacia, por lo que el primer pingall 		sera consultado compeltamente al controlador para que resuelva las salidas. Por lo tanto el primer pingall siempre tardara un poco mas, 	y en algunos caso, algun ping puede llegar a perderse por un timeout. A continuacion mostramos un pingall apenas se levanto 
@@ -39,8 +39,15 @@
 	Para realizar esta prueba vamos a utilizar la herrmienta $iperf$ para hacer una conexxion cliente-servidor entre dos hosts. Primero, 		vamos a ir a la terminal donde esta correindo mininet (donde levatamos la topologia) y en el prompt de mininet escribiremos 
 	$xterm h1 h4$ para abrir dos terminales en cada host.\\
 	Luego vamos a abrir otra terminal (conectada a la VM como se exlico antes) y escribiremos: $sudo wireshark \&$. Y abriremos la interfaz 		$s2-eth1$. Y abriremos otro wireshark de la misma manera, pero en la interfaz $s3-eth1$.\\
-	Luego en la terminal del host 4 levantaremos el servidor escribriendo lo siguiente: $iperf \; -s \; -p \; 80$. En la terminal del 
-	host 1 escribiremos lo sigueinte para hacer la conexion: $iperf \; -c \; 10.0.0.4 \; -p \; 80$. y lo que haremos es ver ambas ventanas 		de wireshark y comprobar que los paquetes TCP solo pasan por algunas de las dos interfaz, pero no en ambas.\\
+	Luego en la terminal del host 4 levantaremos el servidor escribriendo lo siguiente: 
+	\begin{lstlisting}[language=bash,numbers=none]
+		$ iperf -s -p 80
+	\end{lstlisting}	
+	En la terminal del host 1 escribiremos lo sigueinte para hacer la conexion: 
+	\begin{lstlisting}[language=bash,numbers=none]
+		$ iperf -c 10.0.0.4 -p 80
+	\end{lstlisting} 
+	Y lo que haremos es ver ambas ventanas de wireshark y comprobar que los paquetes TCP solo pasan por algunas de las dos interfaz, pero 		no en ambas.\\
 	A continuacion mostramos la captura de las terminales en cada host. y la comprobacion del balanceo de cargas en wireshark:\\
 	\begin{figure}[ht]
 		\begin{adjustbox}{addcode={
@@ -142,8 +149,15 @@
 	Para realizar esta prueba vamos a utilizar la herrmienta $iperf$ para hacer una conexxion cliente-servidor entre dos hosts. Primero, 		vamos a ir a la terminal donde esta correindo mininet (donde levatamos la topologia) y en el prompt de mininet escribiremos 
 	$xterm h1 h5$ para abrir dos terminales en cada host.\\
 	Luego vamos a abrir otra terminal (conectada a la VM como se exlico antes) y escribiremos: $sudo wireshark \&$. Y abriremos la interfaz 	$s5-eth1$.
-	Luego en la terminal del host 5 levantaremos el servidor escribriendo lo siguiente: $iperf \; -u \; -s \; -p \; 80$. En la terminal del 
-	host 1 escribiremos lo sigueinte para hacer la conexion: $iperf \; -u \; -c \; 10.0.0.4 \; -p \; 80$. y lo que haremos es ver ambas 		ventanas de wireshark y comprobar que los paquetes TCP solo pasan por algunas de las dos interfaz, pero no en ambas.\\
+	Luego en la terminal del host 5 levantaremos el servidor escribriendo lo siguiente:
+	\begin{lstlisting}[language=bash,numbers=none]
+		$ iperf -u -s -p 80 
+	\end{lstlisting} 
+	En la terminal del host 1 escribiremos lo sigueinte para hacer la conexion: 
+	\begin{lstlisting}[language=bash,numbers=none]
+		$ iperf -u -c 10.0.0.4 -p 80
+	\end{lstlisting}
+	Y lo que haremos es ver ambas ventanas de wireshark y comprobar que los paquetes TCP solo pasan por algunas de las dos interfaz, pero 		no en ambas.\\
 	A continuacion mostramos la captura de las terminales en cada host y la captura de wireshark y debemos comprobar que el host 1 devuelve 	un warning el cual dice que no se pudieron enviar todos los datagramas y por lo tanto en wireshar debemos poder recibir una cantidad 		menor a la que se queria enviar.\\
 	\begin{figure}[ht]
 		\begin{adjustbox}{addcode={
@@ -180,4 +194,5 @@
 	\FloatBarrier
 	Como se puede observar, vemos que recibimos menos datagramas porque como dice en la temrinal del host 1, se quisieron enviar 893 y 		recibimos 280.
 \subsection{Pruebas automaticas}
-	Esta seccion se realizo a medias ya que en principio se realizaron test unitarion usando $pytest$ donde mediante wireshark, se lee la 		captura que se hizo con wireshark y se comprueba lo que se mostro anteriormente. Pero queda a modo de tareas a realizar poder ejecutar 		desde un solo script codigo que levante todas las terminales que hacen falta para podera hacer la concexion y mediante tcpdump, generar 	la capruta deseada. De esta manera, nuestros test no cambiarian, y siempre leerian un archivo $*.pcap$, donde mediante tshark se lo 		transforma en un txt para poder leerlo usando uan herramienta llamada $pandas$. En un futuro, como segundo release, se podria llevar a 		cabo dichos test y de esa manera de automatiza todo el proyecto.
+	Esta seccion se realizo a medias ya que en principio se realizaron test unitarion usando $pytest$ donde mediante wireshark, se lee la 		captura que se hizo con wireshark y se comprueba lo que se mostro anteriormente. Pero queda a modo de tareas a realizar poder ejecutar 		desde un solo script codigo que levante todas las terminales que hacen falta para podera hacer la concexion y mediante tcpdump, generar 	la capruta deseada. De esta manera, nuestros test no cambiarian, y siempre leerian un archivo $*.pcap$, donde mediante tshark se lo 		transforma en un txt para poder leerlo usando uan herramienta llamada $pandas$. En un futuro, como segundo release, se podria llevar a 		cabo dichos test y de esa manera de automatiza todo el proyecto.\\
+	Para correr las pruebas, se tiene que ejecutar el siguiente comando: $sh \; scripts/test.sh$ el cual ejeuta un script que descomprime 		un archivo en la carpeta wireshark que contiene los archivos de wireshark capturados.

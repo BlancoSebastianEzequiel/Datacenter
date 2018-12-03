@@ -9,16 +9,16 @@
 \subsection{Maquina virtual}
 	Necesitamos de la maquina virtual (VM) para poder ejecutar el controlador, el firewall y la topologia. Por lo tanto debemos usar 		distintas terminales de la misma oara ello. Hay dos formas de hacer esto, una es usar la interfaz que provee la VM y abrir terminales 		desde alli. La otra es abrir terminales desde nuestra pc, y conectarnos via ssh a la maquina virtual. Parece que la primera opcion es 		mas comoda, pero en mi experiencia la VM se traba mucho mas.
 	Para conectarse via ssh a la VM, primero clonamos nuestro repositorio y solo necesitamos ejecutar un script que hace el trabajo.
-	\begin{lstlisting}[language=bash]
-		sh scripts/conect_to_VM.sh
-	\end{lstlisting}
-	Nos pedira la cotraseña de nuetra pc, y luego la contraseña de la VM que es: $frenetic$.\\
-	Luego, si queremos tener nuestro repositorio en la VM, y ademas el controlador en la carpeta $pox/ext$ del repositorio de pox en la VM, 	debemos ejecutar el siguiente comando:\\
-	\begin{lstlisting}[language=bash]
-		sh scripts/resync.sh
+	\begin{lstlisting}[language=bash,numbers=none]
+	 	$ sh scripts/conect_to_VM.sh
+	\end{lstlisting}	
+	Nos pedira la cotraseña de nuetra pc, y luego la contraseña de la VM que es: \lstinline[columns=fixed]{frenetic}.\\
+	Luego, si queremos tener nuestro repositorio en la VM, y ademas el controlador en la carpeta \lstinline[columns=fixed]{pox/ext/} del 		repositorio de pox en la VM, debemos ejecutar el siguiente comando:\\
+	\begin{lstlisting}[language=bash,numbers=none]
+		$ sh scripts/resync.sh
 	\end{lstlisting}
 \subsection{Topologia}
-	La topologia que se desarrollo se llama Fat tree. En la figura 5 vemos nuetra topologia por defecto que es un árbol de altura 3.
+	La topologia que se desarrollo se llama Fat tree. En la siguiente figura vemos nuetra topologia por defecto que es un árbol de altura 3.
 	La raiz tiene conectada 3 hosts que funcionan como clientes del datacenter, cada una de las raices a su vez, tendrán conectadas un host 	cada una, que funcionará como proveedor de contenido.\\
 	Los tres hosts clientes se comunican con los hosts del datacenter usando los protocolos ICMP, TCP y UDP.
 	\begin{figure}[ht]
@@ -34,13 +34,26 @@
 	\FloatBarrier
 	Para poder levantar la topologia sin pasarle los argumentos de configuracion, lo cual hace que por defecto tenga tres clientes y una 		altura de tres, abrimos una terminal que este en la raiz del sistema de archivos de la maquina virtual y podemos escribir 
 	lo siguiente:\\
-	\begin{lstlisting}[language=bash]
+	\begin{lstlisting}[language=bash,numbers=none]
 		sudo mn --custom ~/Datacenter/src/topology.py --topo mytopo --mac --switch ovsk --controller remote
 	\end{lstlisting}
 	En caso de querer configurar la altura o cantidad de clientes, podemos escribir lo siguiente:\\
-	\begin{lstlisting}[language=bash]
+	\begin{lstlisting}[language=bash,numbers=none]
 		sudo mn --custom ~/Datacenter/src/topology.py --topo mytopo, levels=4, clients=4 --mac --switch ovsk --controller remote
 	\end{lstlisting}
+	
+	Hay una hheramienta para visualizar topologias a partir de nuestra salida en mininet. Si en mininet escribimos el comando $dump$ y el 		comando $links$ podemos usar cada salida en una pagina que el link esta en la referencias la cual se pega cada salida como se explica 		en dicha pagina y nos genera un arbol. De esta manera podemos comprobar que nuestra topologia se creo correctamente como se ve a 		continuacion:\\
+	\begin{figure}[ht]
+		\begin{adjustbox}{addcode={
+			\begin{minipage}{\width}}{
+				\caption{%
+					Topologia generada con los comandos dump y links de mininet.
+					}
+			\end{minipage}},rotate=360,center}
+			\includegraphics[scale=.6]{pics/dump_link_topo.png}
+		\end{adjustbox}
+	\end{figure}
+	\FloatBarrier
 
 \subsection{Controlador}
 	El controlador se encarga de la logica del balanceo de cargas y tambien se encarga de llenar las tablas de los switch cuando estos les 		llega un mensaje que no saben responder. De esta manera nuestro controlador consta de $handlers$ los cuales se ejecutan cuando un 		switch acude al controlador.\\
@@ -48,8 +61,7 @@
 	\underline{\textbf{\_handle\_LinkEvent:}}\\
 		Este handler es invocado cada vez que se detecta un link entre switches. El modulo $Discovery$ es el que se encarga de esto. Se 		envias mensajes LLDP entre los switches y estos mismos responden, y de esta manera se puede aprender la topologia. En nuestro 			handler, cuando es invocado, llenamos un diccionario con la informacion pertinente.\\
 	\underline{\textbf{host\_tracker:}}\\
-		Es una clase de python que se encuantra en el repositorio de pox. En nuestro caso la utilizamos para poder descubrir el 		identificador del switch destino a partir de la direccion mac destino. Esto lo necesitamos porque las adyacencias se manejan 			con los identificadores de los switchs (dpid). Por eso, en el constructor del controlador se instancia el mismo, y por cada vez 		que se entra al handler que se encarga de llenar la tabla de los switches ($\_handle\_PacketIn$), se llama al handler del 			$host\_tracker$, que se encarga de aprender los dpid. Luego, podremos obtener el identificador utilizando un metodo del 		$host\_tracker$ el cual accede a un diccionario de entradas de direcciones mac, y retorna el dpid. 
-		Ese metodo es $host\_tracker.getMacEntry(addr)$\\
+		Es una clase de python que se encuantra en el repositorio de pox. En nuestro caso la utilizamos para poder descubrir el 		identificador del switch destino a partir de la direccion mac destino. Esto lo necesitamos porque las adyacencias se manejan 			con los identificadores de los switchs (dpid). Por eso, en el constructor del controlador se instancia el mismo, y por cada vez 		que se entra al handler que se encarga de llenar la tabla de los switches ($\_handle\_PacketIn$), se llama al handler del 			$host\_tracker$, que se encarga de aprender los dpid. Luego, podremos obtener el identificador utilizando un metodo del 		$host\_tracker$ el cual accede a un diccionario de entradas de direcciones mac, y retorna el dpid. Ese metodo es \lstinline[columns=fixed]{host_tracker.getMacEntry(addr)}\\
 	\underline{\textbf{spanning tree:}}\\
 		Este modulo se encarga de eliminar los ciclos de la topologia. Su función es la de gestionar la presencia de bucles en 			topologías de red debido a la existencia de enlaces redundantes. El protocolo permite a los dispositivos de interconexión 			activar o desactivar automáticamente los enlaces de conexión, de forma que se garantice la eliminación de bucles.\\
 	\underline{\textbf{\_handle\_PacketIn:}}\\
