@@ -4,4 +4,4 @@
 ## Docs
 
 Ver [Wiki](https://github.com/BlancoSebastianEzequiel/Datacenter/wiki)  
-Ver [Informe](https://github.com/BlancoSebastianEzequiel/Datacenter/blob/5-report/doc/report.pdf)
+Ver [Informe](https://github.com/BlancoSebastianEzequiel/Datacenter/blob/master/doc/report.pdf)
