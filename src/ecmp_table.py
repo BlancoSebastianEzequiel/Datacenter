@@ -31,5 +31,6 @@ class ECMPTable(object):
     def save_port(self, data):
         (dpid, dst_dpid, protocol, src_addr, dst_addr, port) = data
         key = (dst_dpid, protocol, src_addr, dst_addr)
-        self.table[dpid] = {}
+        if dpid not in self.table:
+            self.table[dpid] = {}
         self.table[dpid][key] = port
