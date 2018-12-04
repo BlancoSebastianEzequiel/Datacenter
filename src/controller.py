@@ -74,6 +74,7 @@ class Controller(object):
         log.info('port1 %d' % link.port1)
         log.info('switch2 %d' % link.dpid2)
         log.info('port2 %d' % link.port2)
+        self.print_adjacents()
         log.info("--------------------------------------------------")
 
     def _handle_ConnectionUp(self, event):
@@ -92,12 +93,6 @@ class Controller(object):
         msg.match.dl_type = pkt.ethernet.ARP_TYPE
         msg.actions.append(of.ofp_action_output(port=of.OFPP_FLOOD))
         event.connection.send(msg)
-
-    @staticmethod
-    def print_msg(msg):
-        print "++++++++++++++++++++++++++++++++++++++++++"
-        print msg
-        print "++++++++++++++++++++++++++++++++++++++++++"
 
     def fill_arp_table(self):
         entry = self.host_tracker.getMacEntry(self.addr_dst)
@@ -119,28 +114,11 @@ class Controller(object):
             log.info(msg)
             msg = ""
 
-    def has_discovered_the_entire_topology(self):
-        if len(self.adjacency.keys()) != 7:
-            return False
-        for dpid in self.adjacency:
-            size = len(self.adjacency[dpid])
-            if dpid in [4, 5, 6, 7] and size < 2:
-                return False
-            if dpid in [2, 3] and size < 4:
-                return False
-            if dpid == 1 and size < 1:
-                return False
-        return True
-
     def _handle_PacketIn(self, event):
         self.host_tracker._handle_PacketIn(event)
-        if not self.has_discovered_the_entire_topology():
-            log.info("Please wait... learning the topology")
-            return
         self.event = event
         self.dpid = event.connection.dpid
         log.info("--------------------------------------------------------")
-        self.print_adjacents()
         log.info("SWITCH %s" % self.dpid)
         self.in_port = event.port
         self.packet = event.parsed
@@ -179,7 +157,6 @@ class Controller(object):
             self.out_port = entry["port"]
         else:
             if self.packet.dst.is_multicast:
-                self.print_msg("MULTICAST")
                 return self.flood()
             log.info("Finding minimun paths from %s to %s"
                      % (self.dpid, self.dst_dpid))

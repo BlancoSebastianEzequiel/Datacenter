@@ -1,16 +1,19 @@
 def launch():
     import pox.log.color
-    pox.log.color.launch()
     import pox.log
-    pox.log.launch(format="[@@@bold@@@level%(name)-22s@@@reset] " +
-                          "@@@bold%(message)s@@@normal")
+    import pox.log.level
+    import logging
     from pox.core import core
     import pox.openflow.discovery
-    pox.openflow.discovery.launch()
-    core.getLogger("openflow.spanning_tree").setLevel("INFO")
-    import pox.openflow.spanning_tree
-    pox.openflow.spanning_tree.launch()
     from controller import Controller
-    core.registerNew(Controller)
+    import pox.openflow.spanning_tree
     from firewall import Firewall
+
+    pox.log.color.launch()
+    pox.log.launch(format="[@@@bold@@@level%(name)-22s@@@reset] " +
+                          "@@@bold%(message)s@@@normal")
+    pox.log.level.launch(packet=logging.WARN, host_tracker=logging.INFO)
+    pox.openflow.discovery.launch()
+    core.registerNew(Controller)
+    pox.openflow.spanning_tree.launch()
     core.registerNew(Firewall)

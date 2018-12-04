@@ -26,12 +26,6 @@ class Firewall(EventMixin):
         Timer(5, self.request_for_switch_statistics, recurring=True)
         log.info("firewall ready")
 
-    @staticmethod
-    def print_msg(msg):
-        print "++++++++++++++++++++++++++++++++++++++++++"
-        print msg
-        print "++++++++++++++++++++++++++++++++++++++++++"
-
     def request_for_switch_statistics(self):
         for connection in core.openflow.connections:
             body = of.ofp_flow_stats_request()
