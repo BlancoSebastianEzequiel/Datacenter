@@ -92,7 +92,6 @@
 		Este handler se invoca frente a la llegada de un paquete, cuando un switch no sabe como responder frente a el, es decir, la 			tabla del switch no tiene un match para despacharlo por un puerto y por lo tanto le pide ayuda al controlador. El algoritmo 			es bastante simple y consta de los siguientes pasos:
 		\begin{itemize}
 			\item Se llama al handler del \lstinline[columns=fixed]{host_tracker} para que aprenda los dpid de cada mac.
-			\item Si la topologia aun no fue aprendida, se retorna.
 			\item Si el protocolo no es ni ICMP, o TCP o UDP se retorna
 			\item Si el paquete es IPv6 se retorna
 			\item Si el paquete ethernet no se encuentra, se retorna
