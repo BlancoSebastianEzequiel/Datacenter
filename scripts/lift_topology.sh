@@ -9,4 +9,4 @@ if [ -z $L ]
 then
     L=3
 fi
-sudo mn --custom ~/Datacenter/src/topology.py --topo mytopo,levels=$L,clients=$C --mac --switch ovsk --controller remote
+sudo mn --custom src/topology.py --topo mytopo,levels=$L,clients=$C --mac --switch ovsk --controller remote
