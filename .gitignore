@@ -6,3 +6,8 @@ test/__pycache__
 test/*.txt
 test/*.pyc
 ej
+oflops
+oftest
+openflow
+pox
+mininet
